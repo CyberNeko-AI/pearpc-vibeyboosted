@@ -221,6 +221,11 @@ public:
 
 	virtual void	displayShow() = 0;
 
+    // Called on the main thread while PROM waits for a boot-menu key.
+    // Backends with their own event thread need no extra pumping.
+    // Return false when the user closes the window.
+    virtual bool pollBootEvents() { return true; }
+
 	/*
 	 *	Note: this function might do different things when in / not in fullscreen
 	 *	mode.

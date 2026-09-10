@@ -1483,7 +1483,13 @@ bool prom_user_boot_partition(File *&ret_file, uint32 &size, bool &direct, uint3
 				gDisplay->printf("\r\e[0K\rYour choice (ESC abort): %d", choice);
 				uint32 keycode;
 				do {
-					while (!cuda_prom_get_key(keycode)) sys_suspend();
+                    while (!cuda_prom_get_key(keycode)) {
+                        // SDL's normal runUI() loop starts after PROM loads
+                        // the boot file. Keep its main-thread events alive
+                        // while this interactive menu waits for input.
+                        if (!gDisplay->pollBootEvents()) return false;
+                        sys_suspend();
+                    }
 				} while (keycode & 0x80);
 
 				if (keycode == KEY_DELETE) choice = 0; else

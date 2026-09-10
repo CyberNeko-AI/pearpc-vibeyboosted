@@ -264,6 +264,16 @@ void initUI(const char *title, const DisplayCharacteristics &aCharacteristics, i
 	sd->setExposed(true);
 }
 
+bool SDLSystemDisplay::pollBootEvents()
+{
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+        if (!handleSDLEvent(event)) return false;
+    }
+    displayShow();
+    return true;
+}
+
 void runUI()
 {
 	// This runs on the main thread -- the SDL event loop

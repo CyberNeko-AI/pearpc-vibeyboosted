@@ -991,14 +991,20 @@ static void *cudaEventLoop(void *arg)
 
 bool cuda_prom_get_key(uint32 &key)
 {
-	if (gCUDA.left == 5 && gCUDA.data[2] == 0x2c) {
-		key = gCUDA.data[3];
-		gCUDA.left = 0;
-		return true;
-	} else {
-		gCUDA.left = 0;
-		return false;
-	}
+    // The CUDA event worker publishes packets under this same mutex.
+    // Reading and clearing left without it can discard a newly queued key.
+    sys_lock_mutex(gCUDAMutex);
+    bool haveKey = gCUDA.left == 5 && gCUDA.data[2] == 0x2c;
+    if (haveKey) key = gCUDA.data[3];
+    bool consumed = gCUDA.left != 0;
+    gCUDA.left = 0;
+    sys_unlock_mutex(gCUDAMutex);
+    if (consumed) {
+        sys_lock_semaphore(gCUDA.idle_sem);
+        sys_signal_semaphore(gCUDA.idle_sem);
+        sys_unlock_semaphore(gCUDA.idle_sem);
+    }
+    return haveKey;
 }
 
 void cuda_pre_init()
