@@ -376,7 +376,9 @@ virtual	uint getWriteFramePrefix()
 
 }; // end of Win32EthTunDevice
 
-EthTunDevice *createEthernetTunnel()
+EthTunDevice *createEthernetTunnel(const char *type)
 {
+	// TAP-WIN32 is the only backend on Windows; ignore the selector.
+	(void)type;
 	return new Win32EthTunDevice();
 }

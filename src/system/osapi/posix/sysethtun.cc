@@ -40,6 +40,8 @@
 #include "tools/data.h"
 #include "tools/str.h"
 
+#include "slirpeth.h"
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -297,11 +299,6 @@ LinuxEthTunDevice(const char *netif_prefix)
 
 }; // end of LinuxEthTunDevice
 
-EthTunDevice *createEthernetTunnel()
-{
-	return new LinuxEthTunDevice("ppc" /* FIXME: hardcoding */);
-}
-
 #else /* BeOS */
 
 class BeOSEthTunDevice: public LinuxLikeEthTunDevice {
@@ -386,11 +383,6 @@ virtual int execIFConfigScript(const char *action, const char *interface)
 #endif
 }; // end of BeOSEthTunDevice
 
-EthTunDevice *createEthernetTunnel()
-{
-	return new BeOSEthTunDevice("ppc" /* FIXME: hardcoding */);
-}
-
 #endif /* HAVE_LINUX_TUN */
 
 #elif (defined(__APPLE__) && defined(__MACH__)) || defined (__FreeBSD__)
@@ -426,7 +418,12 @@ int initDevice()
 {
 	/* allocate tun device */ 
 	if ((mFD = ::open(DEFAULT_DEVICE, O_RDWR | O_NONBLOCK)) < 0) {
-		throw MsgException("Failed to open " DEFAULT_DEVICE "! Is tunnel.kext loaded?");
+		throw MsgException("Failed to open " DEFAULT_DEVICE ". Modern macOS no "
+			"longer provides TUN devices (tunnel.kext was removed). Use the "
+			"built-in user-mode NAT backend instead: set "
+			"'pci_rtl8139_network = \"nat\"' (or 'pci_3c90x_network = \"nat\"') "
+			"in your config, or remove the 'network' key to use the platform "
+			"default.");
 	}
 	return 0;
 }
@@ -442,19 +439,61 @@ virtual	uint getWriteFramePrefix()
 
 }; // end of SimpleEthTunDevice
 
-EthTunDevice *createEthernetTunnel()
-{
-	return new SimpleEthTunDevice();
-}
-
 #else
 /*
  *	System provides no ethernet tunnel
  */
 
-EthTunDevice *createEthernetTunnel()
-{
-	throw MsgException("Your system has no support for ethernet tunnels.");
-}
-
 #endif
+
+/*
+ *	Backend selection. "" selects the platform default:
+ *	 - macOS: user-mode NAT (libslirp), as TUN devices are no longer
+ *	   available on modern macOS.
+ *	 - Linux/BeOS: the TUN/TAP device.
+ *	 - FreeBSD: /dev/tap0.
+ *	"nat"/"slirp" always selects the user-mode NAT backend (if built in),
+ *	"tun"/"tap" always selects the kernel device.
+ */
+EthTunDevice *createEthernetTunnel(const char *type)
+{
+	String t(type ? type : "");
+	if ((t == "nat") || (t == "slirp")) {
+#ifdef HAVE_SLIRP
+		return createSlirpEthernetTunnel();
+#else
+		throw MsgException("The 'nat' ethernet tunnel requires libslirp, "
+			"which this build was configured without (install: "
+			"'brew install libslirp').");
+#endif
+	}
+#if (defined(__APPLE__) && defined(__MACH__))
+	if (t == "") {
+#ifdef HAVE_SLIRP
+		return createSlirpEthernetTunnel();
+#else
+		throw MsgException("This build has no usable ethernet tunnel for "
+			"macOS (install libslirp, then rebuild: 'brew install libslirp').");
+#endif
+	}
+	if ((t == "tun") || (t == "tap")) {
+		return new SimpleEthTunDevice();
+	}
+#elif defined(HAVE_LINUX_TUN)
+	if ((t == "") || (t == "tun") || (t == "tap")) {
+		return new LinuxEthTunDevice("ppc" /* FIXME: hardcoding */);
+	}
+#elif defined(HAVE_BEOS_TUN)
+	if ((t == "") || (t == "tun") || (t == "tap")) {
+		return new BeOSEthTunDevice("ppc" /* FIXME: hardcoding */);
+	}
+#elif defined(__FreeBSD__)
+	if ((t == "") || (t == "tun") || (t == "tap")) {
+		return new SimpleEthTunDevice();
+	}
+#else
+	throw MsgException("Your system has no support for ethernet tunnels.");
+#endif
+	throw MsgfException("Unknown ethernet tunnel type '%y' "
+		"(supported: nat, tun)", &t);
+}

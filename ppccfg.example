@@ -139,12 +139,29 @@ pci_ide0_slave_type = "cdrom"
 ##	Network
 ##
 ##	Choose one of the cards
+##
+##	Ethernet backend ("network" key):
+##	  ""    = platform default (macOS: built-in user-mode NAT,
+##	           Linux/other: TUN/TAP device)
+##	  "nat" = user-mode NAT via libslirp (guest gets 10.0.2.15/24,
+##	           gateway 10.0.2.2, DNS 10.0.2.3; works on macOS without
+##	           root or kernel drivers)
+##	  "tun" = TUN/TAP device (not available on modern macOS)
+##
+##	Host-to-guest port forwarding ("hostfwd" key, nat backend only):
+##	  "tcp:<hostport>:<guestport>" or "udp:<hostport>:<guestport>",
+##	  multiple rules separated by commas, e.g. "tcp:2222:22"
+##	  forwards host port 2222 to SSH on the guest.
 
 pci_3c90x_installed = 0
 pci_3c90x_mac = "de:ad:ca:fe:12:34"
+#pci_3c90x_network = "nat"
+#pci_3c90x_hostfwd = "tcp:2222:22"
 
 pci_rtl8139_installed = 0
 pci_rtl8139_mac = "de:ad:ca:fe:12:35"
+#pci_rtl8139_network = "nat"
+#pci_rtl8139_hostfwd = "tcp:2222:22"
 
 ##
 ##	USB

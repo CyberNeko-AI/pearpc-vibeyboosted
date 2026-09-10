@@ -92,6 +92,18 @@ public:
 	 */
 	virtual	uint	getWriteFramePrefix() = 0;
 	/**
+	 *	Add a host-to-guest port forwarding rule.
+	 *
+	 *	The format of spec is backend-specific. The user-mode NAT
+	 *	backend accepts "tcp:<hostport>:<guestport>" and
+	 *	"udp:<hostport>:<guestport>". Not supported by all backends;
+	 *	the default implementation returns false.
+	 *
+	 *	@returns true if the rule was accepted
+	 */
+	virtual bool	addHostForward(const char *spec) { return false; }
+
+	/**
 	 *	Initialize the device.
 	 *
 	 *	@returns init status (0 = ok)
@@ -106,6 +118,13 @@ public:
 };
 
 /* system-dependent (implementation in $MYSYSTEM/ *.cc) */
-extern EthTunDevice *createEthernetTunnel();
+/**
+ *	Create an ethernet tunnel device.
+ *
+ *	@param type backend selector ("" = platform default; "nat" =
+ *	user-mode NAT/slirp, "tun"/"tap" = TUN/TAP device). Platforms
+ *	with a single backend ignore the parameter.
+ */
+extern EthTunDevice *createEthernetTunnel(const char *type);
 
 #endif /* __SYSETHTUN_H__ */

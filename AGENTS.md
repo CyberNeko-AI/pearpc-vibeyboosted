@@ -14,6 +14,7 @@ PearPC emulates a PowerPC G3/G4-based Macintosh system, including CPU, memory ma
 - GNU Autotools (autoconf, automake)
 - pkg-config
 - SDL3 development libraries (`brew install sdl3` on macOS)
+- libslirp (`brew install libslirp` on macOS; provides the user-mode NAT ethernet backend)
 
 ### Build Steps
 

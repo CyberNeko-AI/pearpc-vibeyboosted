@@ -473,6 +473,22 @@ win32)
 ;;
 esac
 
+dnl libslirp provides the user-mode NAT ethernet backend ('nat').
+dnl It is required on macOS (where TUN devices no longer exist) and
+dnl optional everywhere else.
+PKG_CHECK_MODULES([SLIRP], [slirp >= 4.0], [
+	AC_DEFINE([HAVE_SLIRP], [1], [Define if libslirp is available])
+], [
+	AS_CASE([$target_os], [darwin*], [
+		AC_MSG_ERROR([*** libslirp >= 4.0 not found! The macOS networking backend requires it. Install with: brew install libslirp])
+	], [
+		AC_MSG_WARN([libslirp not found - the 'nat' ethernet tunnel backend will be unavailable])
+	])
+])
+PPC_CFLAGS="$PPC_CFLAGS $SLIRP_CFLAGS"
+PPC_CXXFLAGS="$PPC_CXXFLAGS $SLIRP_CFLAGS"
+PPC_LDADD="$PPC_LDADD $SLIRP_LIBS"
+
 AM_CONDITIONAL(USE_ARCH_X86, test x$ARCH_DIR = xx86)
 AM_CONDITIONAL(USE_ARCH_X86_64, test x$ARCH_DIR = xx86_64)
 AM_CONDITIONAL(USE_ARCH_GENERIC, test x$ARCH_DIR = xgeneric)

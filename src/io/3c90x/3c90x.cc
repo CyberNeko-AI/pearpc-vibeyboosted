@@ -1889,6 +1889,8 @@ bool _3c90x_installed = false;
 
 #define _3C90X_KEY_INSTALLED	"pci_3c90x_installed"
 #define _3C90X_KEY_MAC		"pci_3c90x_mac"
+#define _3C90X_KEY_NETWORK	"pci_3c90x_network"
+#define _3C90X_KEY_HOSTFWD	"pci_3c90x_hostfwd"
 
 void _3c90x_init()
 {
@@ -1919,10 +1921,32 @@ void _3c90x_init()
 			}
 			memcpy(mac, cfgmac, sizeof mac);
 		}
-		EthTunDevice *ethTun = createEthernetTunnel();
+		String nettype_("");
+		gConfig->getConfigString(_3C90X_KEY_NETWORK, nettype_);
+		EthTunDevice *ethTun = createEthernetTunnel(nettype_.contentChar());
 		if (!ethTun) {
 			IO_3C90X_ERR("Couldn't create ethernet tunnel\n");
 			exit(1);
+		}
+		if (gConfig->haveKey(_3C90X_KEY_HOSTFWD)) {
+			String hostfwd_;
+			gConfig->getConfigString(_3C90X_KEY_HOSTFWD, hostfwd_);
+			const char *specs = hostfwd_.contentChar();
+			while (specs && *specs) {
+				const char *comma = strchr(specs, ',');
+				int len = comma ? (int)(comma - specs) : (int)strlen(specs);
+				if (len > 127) len = 127;
+				char spec[128];
+				memcpy(spec, specs, len);
+				spec[len] = 0;
+				char *sp = spec;
+				while (*sp == ' ' || *sp == '\t') sp++;
+				if (*sp && !ethTun->addHostForward(sp)) {
+					IO_3C90X_WARN("ethernet tunnel does not support host forward '%s'\n", sp);
+				}
+				if (!comma) break;
+				specs = comma + 1;
+			}
 		}
 		if (ethTun->initDevice()) {
 			IO_3C90X_ERR("Couldn't initialize ethernet tunnel\n");
@@ -1954,4 +1978,6 @@ void _3c90x_init_config()
 {
 	gConfig->acceptConfigEntryIntDef(_3C90X_KEY_INSTALLED, 0);
 	gConfig->acceptConfigEntryString(_3C90X_KEY_MAC, false);
+	gConfig->acceptConfigEntryStringDef(_3C90X_KEY_NETWORK, "");
+	gConfig->acceptConfigEntryStringDef(_3C90X_KEY_HOSTFWD, "");
 }

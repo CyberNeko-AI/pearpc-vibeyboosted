@@ -725,6 +725,8 @@ bool rtl8139_installed = false;
 
 #define RTL8139_KEY_INSTALLED   "pci_rtl8139_installed"
 #define RTL8139_KEY_MAC         "pci_rtl8139_mac"
+#define RTL8139_KEY_NETWORK     "pci_rtl8139_network"
+#define RTL8139_KEY_HOSTFWD     "pci_rtl8139_hostfwd"
 
 void rtl8139_init()
 {
@@ -757,10 +759,32 @@ void rtl8139_init()
 			}
 			memcpy(mac, cfgmac, sizeof mac);
 		}
-		EthTunDevice *ethTun = createEthernetTunnel();
+		String nettype_("");
+		gConfig->getConfigString(RTL8139_KEY_NETWORK, nettype_);
+		EthTunDevice *ethTun = createEthernetTunnel(nettype_.contentChar());
 		if (!ethTun) {
 			IO_3C90X_ERR("Couldn't create ethernet tunnel\n");
 			exit(1);
+		}
+		if (gConfig->haveKey(RTL8139_KEY_HOSTFWD)) {
+			String hostfwd_;
+			gConfig->getConfigString(RTL8139_KEY_HOSTFWD, hostfwd_);
+			const char *specs = hostfwd_.contentChar();
+			while (specs && *specs) {
+				const char *comma = strchr(specs, ',');
+				int len = comma ? (int)(comma - specs) : (int)strlen(specs);
+				if (len > 127) len = 127;
+				char spec[128];
+				memcpy(spec, specs, len);
+				spec[len] = 0;
+				char *sp = spec;
+				while (*sp == ' ' || *sp == '\t') sp++;
+				if (*sp && !ethTun->addHostForward(sp)) {
+					IO_RTL8139_WARN("ethernet tunnel does not support host forward '%s'\n", sp);
+				}
+				if (!comma) break;
+				specs = comma + 1;
+			}
 		}
 		if (ethTun->initDevice()) {
 			IO_3C90X_ERR("Couldn't initialize ethernet tunnel\n");
@@ -792,4 +816,6 @@ void rtl8139_init_config()
 {
 	gConfig->acceptConfigEntryIntDef(RTL8139_KEY_INSTALLED, 0);
 	gConfig->acceptConfigEntryString(RTL8139_KEY_MAC, false);
+	gConfig->acceptConfigEntryStringDef(RTL8139_KEY_NETWORK, "");
+	gConfig->acceptConfigEntryStringDef(RTL8139_KEY_HOSTFWD, "");
 }

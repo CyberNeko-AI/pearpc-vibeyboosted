@@ -7,17 +7,25 @@ PearPC 已包含 3Com 3C90x 和 Realtek RTL8139 网卡模拟。两者都通过
 
 - `src/io/3c90x/3c90x.cc`
 - `src/io/rtl8139/rtl8139.cc`
-- `src/system/osapi/posix/sysethtun.cc`
+- `src/system/sysethtun.h`（后端抽象层）
+- `src/system/osapi/posix/sysethtun.cc`（TUN/TAP 后端与后端选择）
+- `src/system/osapi/posix/slirpeth.cc`（用户态 NAT 后端，基于 libslirp）
 
-macOS 分支使用旧式 TUN 设备，并固定打开 `/dev/tun0`。因此仅在配置文件中启用
-网卡并不足以联网；宿主机必须提供可读写的 TUN 设备。
+## macOS 限制与解决方案
 
-## macOS 限制
+现代 macOS 已移除早期系统中的 `tunnel.kext`，不再提供 `/dev/tun0`。
+因此 PearPC 在 macOS 上默认使用**用户态 NAT 后端**（libslirp，即 QEMU
+`-netdev user` 所使用的网络栈），无需 root 权限、无需内核驱动：
 
-当前系统未提供 `/dev/tun0`。现代 macOS 已移除早期系统中的 `tunnel.kext`，而
-PearPC 代码仍假定该设备存在。启用网卡后，初始化通常会因无法打开设备而失败。
+- 客户机通过内置 DHCP 服务器获得 `10.0.2.15/24`；
+- 网关为 `10.0.2.2`，DNS 为 `10.0.2.3`（由 libslirp 代理）；
+- 出站 TCP/UDP 通过宿主机普通套接字做 NAT；
+- 支持入站端口转发（见下文 hostfwd）。
 
-可以用下面的命令确认环境：
+构建依赖：macOS 上需要 `brew install libslirp`（与 sdl3 一样，configure
+阶段会通过 pkg-config 检测；缺失时 macOS 构建会直接报错）。
+
+可以用下面的命令确认旧的 TUN 设备确实不存在（预期行为）：
 
 ```sh
 ls -l /dev/tun0 /dev/tap0
@@ -32,18 +40,28 @@ pci_rtl8139_installed = 1
 pci_rtl8139_mac = "52:54:00:12:34:56"
 ```
 
-这只会启用客户机中的 RTL8139，不会创建宿主机网络设备。
+新增后端选择与端口转发配置：
 
-## 后续方案
+```ini
+# 以太网后端："" = 平台默认（macOS 为 nat，Linux 为 tun）
+#             "nat" = 用户态 NAT（libslirp）
+#             "tun" = TUN/TAP 设备（macOS 上已不可用）
+pci_rtl8139_network = "nat"
+pci_3c90x_network = "nat"
 
-推荐为 macOS 增加用户态网络后端（例如 UDP/NAT），避免依赖废弃的 TUN 驱动。
-实现时需要：
+# hostfwd：宿主机端口 -> 客户机端口（10.0.2.15）
+# 格式：tcp:<hostport>:<guestport> 或 udp:<hostport>:<guestport>
+# 多个规则用逗号分隔，例如把宿主机 2222 转发到客户机 SSH：
+pci_rtl8139_hostfwd = "tcp:2222:22"
+```
 
-1. 在 `EthTunDevice` 抽象层增加 NAT/UDP 后端；
-2. 将 RTL8139 收发的以太网帧转换为宿主机套接字流量；
-3. 增加配置项选择后端，例如 `pci_rtl8139_network = "nat"`；
-4. 保留现有 TUN 路径，供安装了兼容驱动的系统使用；
-5. 增加 DHCP、ARP、IPv4 连通性和关闭清理测试。
+macOS 上直接启用网卡（不写 `network` 键）即默认走 nat 后端，无需其它
+配置即可上网；Linux 上默认仍走 TUN/TAP，可选 `"nat"`。
 
-TUN 是三层接口，而 RTL8139 工作在二层；若需要完整以太网帧转发，应使用 TAP
-或在用户态实现 NAT，而不是只创建一个三层 TUN 接口。
+## 测试
+
+- 后端协议自测：DHCP（DISCOVER→OFFER）、ARP、DNS 代理、出站 TCP
+  （HTTP GET）、hostfwd 入站回环均已验证。
+- 运行 `SLIRPETH_DEBUG=1` 可开启后端帧收发日志；
+  `G_MESSAGES_DEBUG=all` 可开启 libslirp 内部调试输出。
+
