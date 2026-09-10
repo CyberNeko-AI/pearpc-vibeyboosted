@@ -701,23 +701,15 @@ void cuda_write(uint32 addr, uint32 data, int size)
 		break;
     case IFR:
 		IO_CUDA_TRACE("->IFR\n");
-		// VIA IFR is write-one-to-clear: writing a set bit clears the
-		// corresponding pending flag.  Assignment would incorrectly set
-		// flags requested by the guest and lose unrelated timer/shift flags.
-		gCUDA.rIFR &= (byte)~data;
-		if (!(gCUDA.rIFR & SR_INT)) {
-			pic_cancel_interrupt(IO_PIC_IRQ_CUDA);
-		}
+		// Preserve the existing CUDA handshake semantics.  The ADB driver
+		// writes the complete IFR value while a transfer is in progress;
+		// clearing individual bits here can drop the edge the state machine
+		// uses to advance keyboard/mouse packets.
+		gCUDA.rIFR = data;
 		break;
     case IER:
 		IO_CUDA_TRACE("->IER\n");
-		// Bit 7 selects set (1) versus clear (0); only bits 0..6 are
-		// interrupt enables.  This is the 6522/VIA programming model.
-		if (data & IER_SET) {
-			gCUDA.rIER |= data & 0x7f;
-		} else {
-			gCUDA.rIER &= (byte)~data;
-		}
+		gCUDA.rIER = data;
 		break;
     	case ANH:
 		IO_CUDA_TRACE("->ANH\n");
@@ -830,9 +822,6 @@ void cuda_read(uint32 addr, uint32 &data, int size)
 	case IFR:
 		cuda_ifr_read_count++;
 		data = gCUDA.rIFR;
-		if (gCUDA.rIFR & gCUDA.rIER) {
-			data |= 0x80; // IFR bit 7 is the interrupt summary flag.
-		}
 		if (gCUDA.state == cuda_idle) {
 			if (!gCUDA.left /*&& !(gCUDA.rIER & SR_INT)*/) {
 //				if (cuda_interrupt()) {
