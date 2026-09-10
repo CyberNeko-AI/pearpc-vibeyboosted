@@ -93,7 +93,9 @@ bool FASTCALL ppc_exception(PPC_CPU_State &aCPU, uint32 type, uint32 flags, uint
         break;
     case PPC_EXC_NO_VEC:
         aCPU.srr[0] = aCPU.pc;
-        aCPU.srr[1] = aCPU.msr & 0x0000ff73;
+        // Match the generic backend's saved MSR mask, including upper
+        // status bits. Both the old and new masks preserve IR/DR.
+        aCPU.srr[1] = aCPU.msr & 0x87c0ffff;
         break;
     case PPC_EXC_PROGRAM:
         aCPU.srr[0] = (flags & PPC_EXC_PROGRAM_NEXT) ? aCPU.npc : aCPU.pc;

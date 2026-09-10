@@ -302,6 +302,16 @@ For a large RAM configuration, set `PEARPC_CRASH_DIR` to another disk before
 running. Do not enable verbose trace categories until a reproducible capture
 is available, because they can change timing and performance.
 
+If the log contains `entry not physical`, inspect the preceding
+`code mapping outside RAM` line. The AArch64 MMU path records the first
+invalid EA/PA/MSR and delivers a guest instruction-storage interrupt (ISI),
+so a malformed PTE is not immediately escalated into a host fatal.
+
+When the same EA is reproducible after an `rfi`/`mtmsr` sequence, inspect the
+MSR bits in that line. The JIT now redispatches after `mtmsr`, `mtsr`,
+`mtsrin`, and `icbi`; these instructions can change translation or invalidate
+generated code, so falling through an old translated block is invalid.
+
 ```sh
 python3 scripts/debug/memdump.py printk memdump_jit.bin [search-term]
 python3 scripts/debug/memdump.py oops memdump_jit.bin

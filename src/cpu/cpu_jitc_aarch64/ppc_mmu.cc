@@ -125,11 +125,23 @@ extern "C" uint32 ppc_effective_to_physical_code_c(PPC_CPU_State *cpu, uint32 ea
     uint32 pa;
     int r = ppc_effective_to_physical(*cpu, ea, PPC_MMU_READ | PPC_MMU_CODE, pa);
     if (r == PPC_MMU_OK) {
-        if (pa < gMemorySize) {
-            uint32 idx = (ea >> 12) & (TLB_ENTRIES - 1);
-            cpu->tlb_code_eff[idx] = ea & ~0xFFF;
-            cpu->tlb_code_phys[idx] = pa & ~0xFFF;
+        // Instruction fetches must resolve into guest RAM.  A malformed or
+        // stale PTE can otherwise return an out-of-range physical address;
+        // passing it to jitcNewPC makes the host abort with "entry not
+        // physical" instead of delivering the guest ISI exception.
+        if (pa >= gMemorySize || pa > gMemorySize - 4) {
+            static bool warned = false;
+            if (!warned) {
+                warned = true;
+                PPC_MMU_WARN("code mapping outside RAM: ea=%08x pa=%08x memsize=%08x msr=%08x srr0=%08x srr1=%08x\n",
+                    ea, pa, gMemorySize, cpu->msr, cpu->srr[0], cpu->srr[1]);
+            }
+            ppc_exception(*cpu, PPC_EXC_ISI, PPC_EXC_SRR1_PAGE);
+            return 0;
         }
+        uint32 idx = (ea >> 12) & (TLB_ENTRIES - 1);
+        cpu->tlb_code_eff[idx] = ea & ~0xFFF;
+        cpu->tlb_code_phys[idx] = pa & ~0xFFF;
         return pa;
     }
     if (r == PPC_MMU_EXC) {

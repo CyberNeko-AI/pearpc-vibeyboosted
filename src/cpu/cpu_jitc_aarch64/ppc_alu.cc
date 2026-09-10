@@ -4371,14 +4371,18 @@ JITCFlow ppc_opc_gen_mtsr(JITC &jitc)
     ppc_opc_gen_check_privilege(jitc);
     // mtsr changes segment registers — use interpreter + invalidate TLB
     ppc_opc_gen_interpret(jitc, ppc_opc_mtsr);
-    return flowEndBlock;
+    jitc.asmLDRw_cpu(W0, offsetof(PPC_CPU_State, npc));
+    jitc.asmCALL_cpu(PPC_STUB_NEW_PC);
+    return flowEndBlockUnreachable;
 }
 
 JITCFlow ppc_opc_gen_mtsrin(JITC &jitc)
 {
     ppc_opc_gen_check_privilege(jitc);
     ppc_opc_gen_interpret(jitc, ppc_opc_mtsrin);
-    return flowEndBlock;
+    jitc.asmLDRw_cpu(W0, offsetof(PPC_CPU_State, npc));
+    jitc.asmCALL_cpu(PPC_STUB_NEW_PC);
+    return flowEndBlockUnreachable;
 }
 
 JITCFlow ppc_opc_gen_tlbia(JITC &jitc)

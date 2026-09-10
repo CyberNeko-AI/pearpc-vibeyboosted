@@ -127,7 +127,11 @@ GEN_INTERPRET(mcrxr)
 /* SPR — mfspr/mtspr native gen_ for LR/CTR in ppc_alu.cc */
 GEN_INTERPRET(mftb)
 /* mfmsr has native gen_ in ppc_alu.cc */
-GEN_INTERPRET_ENDBLOCK(mtmsr)
+// MSR changes can switch instruction translation (IR) and data translation
+// (DR).  Always redispatch through npc after mtmsr so the next instruction is
+// translated under the new address space rather than falling through code
+// generated for the old one.
+GEN_INTERPRET_BRANCH(mtmsr)
 
 /* SR — native gen_ in ppc_alu.cc */
 /* mfsr, mtsr, mfsrin, mtsrin have native gen_ in ppc_alu.cc */
@@ -219,7 +223,8 @@ GEN_INTERPRET(eciwx)
 GEN_INTERPRET(ecowx)
 /* isync, eieio — no-op in emulator, native gen_ below */
 /* tlbie, tlbia, tlbsync have native gen_ in ppc_alu.cc */
-GEN_INTERPRET_ENDBLOCK(icbi)
+// icbi invalidates translated code; redispatch to observe the invalidation.
+GEN_INTERPRET_BRANCH(icbi)
 /* dcbz — native codegen in ppc_mmu.cc (single TLB lookup + STP×2) */
 
 /* AltiVec load/store */
@@ -930,7 +935,13 @@ static JITCFlow ppc_opc_gen_group_v(JITC &jitc)
 
     // Route unimplemented AltiVec opcodes through interpreter for correctness
     ppc_opc_gen_interpret(jitc, ppc_opc_group_v);
-    return flowContinue;
+    // The interpreter path can raise NO_VEC.  It updates npc and clears MSR,
+    // so continuing in the current translated block would execute the next
+    // instruction with stale translation state.  Redispatch through npc just
+    // like the native vector guard does.
+    jitc.asmLDRw_cpu(W0, offsetof(PPC_CPU_State, npc));
+    jitc.asmCALL_cpu(PPC_STUB_NEW_PC);
+    return flowEndBlockUnreachable;
 }
 
 static void ppc_opc_init_groupv()
