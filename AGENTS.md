@@ -92,6 +92,11 @@ clang-format -i src/cpu/cpu_jitc_aarch64/myfile.cc
 
 Legacy code in `src/cpu/cpu_jitc_x86/`, `src/cpu/cpu_jitc_x86_64/`, `src/cpu/cpu_generic/`, and `src/io/` uses tabs. Leave it as-is unless you're making substantive changes to a file.
 
+## Local Debugging Preferences
+
+- The user confirmed on 2026-10-03 that these virtual machines contain no important data. Do not create virtual hard-disk backups or precautionary clones for future debugging; use the configured disk image directly.
+- Existing agent-created hard-disk backups and diagnostic clones may be deleted when they are no longer in use. Preserve the configured active disk image, installation media, and diagnostic logs/memory dumps unless separately asked to remove them.
+
 ## License
 
 GPLv2. See [COPYING](COPYING).
