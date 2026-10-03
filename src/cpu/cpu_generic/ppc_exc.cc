@@ -112,6 +112,7 @@ bool FASTCALL ppc_exception(uint32 type, uint32 flags, uint32 a)
 		return false;
 	}
 	ppc_mmu_tlb_invalidate();
+	gCPU.have_reservation = false;
 	gCPU.msr = 0;
 	gCPU.npc = type;
 	return true;

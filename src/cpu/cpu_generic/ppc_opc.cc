@@ -73,6 +73,34 @@ void ppc_opc_bx()
     if (gCPU.current_opc & PPC_OPC_LK) {
         gCPU.lr = gCPU.pc + 4;
     }
+
+    // Check for Darwin XNU's mapDrainBusy uniprocessor spinlock:
+    if (!(gCPU.current_opc & (PPC_OPC_AA | PPC_OPC_LK)) && (li == gCPU.pc - 16) && (gCPU.pc >= 16)) {
+        uint32 i0, i1, i2, i3;
+        if (ppc_read_effective_code(gCPU.pc - 16, i0) == PPC_MMU_OK &&
+            ppc_read_effective_code(gCPU.pc - 12, i1) == PPC_MMU_OK &&
+            ppc_read_effective_code(gCPU.pc - 8, i2) == PPC_MMU_OK &&
+            ppc_read_effective_code(gCPU.pc - 4, i3) == PPC_MMU_OK) {
+            if (i0 == 0x80830000 && i1 == 0x5484463e && i2 == 0x28040001 &&
+                ((i3 & 0xFC1FFFFF) == 0x4C020020)) {
+                if (!(gCPU.msr & MSR_EE)) {
+                    uint32 mapping_addr = gCPU.gpr[3];
+                    uint32 val;
+                    if (ppc_read_effective_word(mapping_addr, val) == PPC_MMU_OK) {
+                        uint32 busy = (val >> 24) & 0xFF;
+                        if (busy > 1) {
+                            PPC_CPU_WARN("[UP-SAFEGUARD] mapDrainBusy: mapping %08x busy=%u on UP with MSR[EE]=0, normalizing to 1\n",
+                                         mapping_addr, busy);
+                            val = (val & 0x00FFFFFF) | 0x01000000;
+                            ppc_write_effective_word(mapping_addr, val);
+                            gCPU.gpr[4] = 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     gCPU.npc = li;
 }
 

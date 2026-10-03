@@ -2014,20 +2014,21 @@ void ppc_opc_stwcx_()
 	int rA, rS, rB;
 	PPC_OPC_TEMPL_X(gCPU.current_opc, rS, rA, rB);
 	gCPU.cr &= 0x0fffffff;
+	if (gCPU.xer & XER_SO) {
+		gCPU.cr |= CR_CR0_SO;
+	}
 	if (gCPU.have_reservation) {
 		gCPU.have_reservation = false;
-		uint32 v;
-		if (ppc_read_effective_word((rA?gCPU.gpr[rA]:0)+gCPU.gpr[rB], v)) {
+		uint32 value;
+		uint32 ea = (rA ? gCPU.gpr[rA] : 0) + gCPU.gpr[rB];
+		if (ppc_read_effective_word(ea, value)) {
 			return;
 		}
-		if (v==gCPU.reserve) {
-			if (ppc_write_effective_word((rA?gCPU.gpr[rA]:0)+gCPU.gpr[rB], gCPU.gpr[rS])) {
+		if (value == gCPU.reserve) {
+			if (ppc_write_effective_word(ea, gCPU.gpr[rS])) {
 				return;
 			}
 			gCPU.cr |= CR_CR0_EQ;
-		}
-		if (gCPU.xer & XER_SO) {
-			gCPU.cr |= CR_CR0_SO;
 		}
 	}
 }

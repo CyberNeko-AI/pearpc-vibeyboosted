@@ -390,6 +390,26 @@ JITCFlow ppc_opc_gen_bx(JITC &jitc)
     }
 
     sint32 targetOfs = aa ? (sint32)li : (sint32)(jitc.pc + li);
+
+    // Check for Darwin XNU's mapDrainBusy uniprocessor spinlock:
+    // 0008aae0: 80830000  lwz     r4, 0(r3)
+    // 0008aae4: 5484463e  rlwinm  r4, r4, 8, 24, 31
+    // 0008aae8: 28040001  cmplwi  r4, 1
+    // 0008aaec: 4de20020  beqlr+
+    // 0008aaf0: 4bfffff0  b       -16 (back to lwz)
+    if (!aa && !lk && (sint32)li == -16 && jitc.pc >= 16 && jitc.currentPhysPage) {
+        uint32 i0 = ppc_word_from_BE(*(uint32 *)&jitc.currentPhysPage[jitc.pc - 16]);
+        uint32 i1 = ppc_word_from_BE(*(uint32 *)&jitc.currentPhysPage[jitc.pc - 12]);
+        uint32 i2 = ppc_word_from_BE(*(uint32 *)&jitc.currentPhysPage[jitc.pc - 8]);
+        uint32 i3 = ppc_word_from_BE(*(uint32 *)&jitc.currentPhysPage[jitc.pc - 4]);
+        if (i0 == 0x80830000 && i1 == 0x5484463e && i2 == 0x28040001 && ((i3 & 0xFC1FFFFF) == 0x4C020020)) {
+            // Reached backward branch in mapDrainBusy because busy != 1.
+            // Call safeguard to break uniprocessor deadlock.
+            jitc.asmMOV(X0, X20);
+            jitc.asmCALL((NativeAddress)ppc_safeguard_map_drain_busy);
+        }
+    }
+
     jitc.emitAssure(get_branch_dispatch_size(jitc, aa, lk, targetOfs));
     emit_branch_dispatch(jitc, aa, lk, targetOfs);
     return flowEndBlockUnreachable;

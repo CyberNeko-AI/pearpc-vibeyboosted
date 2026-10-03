@@ -134,7 +134,7 @@ extern "C" uint32 ppc_effective_to_physical_code_c(PPC_CPU_State *cpu, uint32 ea
             if (!warned) {
                 warned = true;
                 PPC_MMU_WARN("code mapping outside RAM: ea=%08x pa=%08x memsize=%08x msr=%08x srr0=%08x srr1=%08x\n",
-                    ea, pa, gMemorySize, cpu->msr, cpu->srr[0], cpu->srr[1]);
+                             ea, pa, gMemorySize, cpu->msr, cpu->srr[0], cpu->srr[1]);
             }
             ppc_exception(*cpu, PPC_EXC_ISI, PPC_EXC_SRR1_PAGE);
             return 0;
@@ -1479,25 +1479,43 @@ int ppc_opc_stwcx_(PPC_CPU_State &aCPU)
     int rS, rA, rB;
     PPC_OPC_TEMPL_X(aCPU.current_opc, rS, rA, rB);
     aCPU.cr &= 0x0fffffff;
+    if (aCPU.xer & XER_SO) {
+        aCPU.cr |= CR_CR0_SO;
+    }
     if (aCPU.have_reservation) {
         aCPU.have_reservation = false;
-        uint32 v;
-        int ret = ppc_read_effective_word(aCPU, (rA ? aCPU.gpr[rA] : 0) + aCPU.gpr[rB], v);
+        int ret = ppc_write_effective_word(aCPU, (rA ? aCPU.gpr[rA] : 0) + aCPU.gpr[rB], aCPU.gpr[rS]);
         if (ret) {
             return ret;
         }
-        if (v == aCPU.reserve) {
-            ret = ppc_write_effective_word(aCPU, (rA ? aCPU.gpr[rA] : 0) + aCPU.gpr[rB], aCPU.gpr[rS]);
-            if (ret) {
-                return ret;
-            }
-            aCPU.cr |= CR_CR0_EQ;
-        }
-        if (aCPU.xer & XER_SO) {
-            aCPU.cr |= CR_CR0_SO;
-        }
+        aCPU.cr |= CR_CR0_EQ;
     }
     return PPC_MMU_OK;
+}
+
+extern "C" void ppc_safeguard_map_drain_busy(PPC_CPU_State *cpu)
+{
+    // On a single-processor (UP) system, if interrupts are disabled (MSR[EE] == 0),
+    // waiting for another CPU to release a busy mapping is an architectural impossibility.
+    // In Darwin XNU's mapDrainBusy (hw_vm.s), the current CPU already owns 1 busy count
+    // and is waiting for other CPUs to drop their counts to 0 (so total busy count == 1).
+    // If busy > 1 under MSR[EE] == 0 on UP, it will spin forever.
+    // We normalize the busy count to 1 so mapDrainBusy can complete and unblock the installer.
+    if (!(cpu->msr & MSR_EE)) {
+        uint32 mapping_addr = cpu->gpr[3];
+        uint32 val;
+        if (ppc_read_effective_word(*cpu, mapping_addr, val) == PPC_MMU_OK) {
+            uint32 busy = (val >> 24) & 0xFF;
+            if (busy > 1) {
+                PPC_CPU_WARN(
+                    "[UP-SAFEGUARD] mapDrainBusy: mapping %08x busy=%u on UP with MSR[EE]=0, normalizing to 1\n",
+                    mapping_addr, busy);
+                val = (val & 0x00FFFFFF) | 0x01000000;
+                ppc_write_effective_word(*cpu, mapping_addr, val);
+                cpu->gpr[4] = 1;
+            }
+        }
+    }
 }
 
 int ppc_opc_sth(PPC_CPU_State &aCPU)
@@ -2545,59 +2563,46 @@ JITCFlow ppc_opc_gen_stwcx_(JITC &jitc)
     jitc.clobberAll();
     gen_prologue(jitc);
 
-    // cr &= 0x0FFFFFFF  (clear CR0)
+    // Clear CR0. The existing PearPC behavior copies XER.SO only after a
+    // reservation was present, including the stale-reservation case.
     jitc.asmLDRw_cpu(W16, offsetof(PPC_CPU_State, cr));
     jitc.asmANDw_val(W16, W16, 0x0FFFFFFF);
     jitc.asmSTRw_cpu(W16, offsetof(PPC_CPU_State, cr));
 
-    // if (!have_reservation) goto done
+    // A conditional store consumes the reservation even when the value changed.
     jitc.asmLDRw_cpu(W16, offsetof(PPC_CPU_State, have_reservation));
     NativeAddress cbz_fixup = jitc.asmCBZwFixup(W16);
-
-    // have_reservation = 0
     jitc.asmMOV(W16, 0);
     jitc.asmSTRw_cpu(W16, offsetof(PPC_CPU_State, have_reservation));
 
-    // EA into W0, save in temp2 (asm stub clobbers W0-W18)
+    // Copy XER.SO into CR0.SO after confirming a reservation existed.
+    jitc.asmLDRw_cpu(W16, offsetof(PPC_CPU_State, cr));
+    jitc.asmLDRw_cpu(W17, offsetof(PPC_CPU_State, xer));
+    jitc.asmLSRw_imm(W17, W17, 31);
+    jitc.asmBFIw(W16, W17, 28, 1);
+    jitc.asmSTRw_cpu(W16, offsetof(PPC_CPU_State, cr));
+
+    // Compute EA and preserve it across the MMU helper call.
     gen_ea_X(jitc, rA, rB);
     jitc.asmSTRw_cpu(W0, offsetof(PPC_CPU_State, temp2));
-
-    // Read current value at EA
     jitc.asmCALL_cpu(PPC_STUB_READ_WORD);
 
-    // Compare with reserve
+    // Store only when the memory value still equals the reservation value.
     jitc.asmLDRw_cpu(W16, offsetof(PPC_CPU_State, reserve));
     jitc.asmCMPw(W0, W16);
-
-    // if (value != reserve) goto skip_write
     NativeAddress bne_fixup = jitc.asmBccFixup(A64_NE);
 
-    // Store gpr[rS] to EA (reload EA from temp2, reload W9 = pc_ofs)
     gen_prologue(jitc);
     jitc.asmLDRw_cpu(W0, offsetof(PPC_CPU_State, temp2));
     jitc.asmLDRw_cpu(W1, GPR_OFS(rS));
     jitc.asmCALL_cpu(PPC_STUB_WRITE_WORD);
 
-    // cr |= CR_CR0_EQ  (bit 29 = 0x20000000)
     jitc.asmLDRw_cpu(W16, offsetof(PPC_CPU_State, cr));
     jitc.asmMOV(W17, (uint32)CR_CR0_EQ);
     jitc.asmORRw(W16, W16, W17);
     jitc.asmSTRw_cpu(W16, offsetof(PPC_CPU_State, cr));
-
-    // skip_write:
     jitc.asmResolveFixup(bne_fixup);
-
-    // Copy XER.SO (bit 31) into CR0.SO (bit 28) without a short branch:
-    // this sequence may straddle noncontiguous translation fragments.
-    jitc.asmLDRw_cpu(W17, offsetof(PPC_CPU_State, xer));
-    jitc.asmLSRw_imm(W17, W17, 31);
-    jitc.asmLDRw_cpu(W16, offsetof(PPC_CPU_State, cr));
-    jitc.asmBFIw(W16, W17, 28, 1);
-    jitc.asmSTRw_cpu(W16, offsetof(PPC_CPU_State, cr));
-
-    // done:
     jitc.asmResolveFixup(cbz_fixup);
-
     return flowContinue;
 }
 
