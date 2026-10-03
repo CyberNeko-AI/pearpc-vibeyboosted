@@ -57,60 +57,9 @@
 #include "ppc_img.h"
 #include "ppc_button_changecd.h"
 
-void changeCDFunc(void *p)
-{
-    int *i = (int *)p;
-    IDEConfig *idecfg = ide_get_config(*i);
-
-    CDROMDevice *dev = (CDROMDevice *)idecfg->device;
-
-    dev->acquire();
-
-    if (dev->isLocked()) {
-        dev->release();
-
-        // sys_gui_messagebox("cdrom is locked!");
-    } else {
-        dev->setReady(false);
-        dev->release();
-        /*
-		 * because we have set ready to false, no one can use
-		 * the cdrom now (no medium present)
-		 */
-        String fn;
-        if (sys_gui_open_file_dialog(fn, "title", "*.*", "alle", "testa", true)) {
-            dev->acquire();
-            ((CDROMDeviceFile *)dev)->changeDataSource(fn.contentChar());
-            dev->setReady(true);
-            dev->release();
-        } else {
-            /*
-			 * the user picked no file / canceled the dialog.
-			 * what's better now, to leave the old medium
-			 * or to set no medium present?
-			 * we choose the second option.
-			 */
-        }
-    }
-}
-
 void initMenu()
 {
-    /*	IDEConfig *idecfg = ide_get_config(0);
-	if (idecfg->installed && idecfg->protocol == IDE_ATAPI) {
-		MemMapFile changeCDButton(ppc_button_changecd, sizeof ppc_button_changecd);
-		int *i = new int;
-		*i = 0;
-		gDisplay->insertMenuButton(changeCDButton, changeCDFunc, i);
-	}
-	idecfg = ide_get_config(1);
-	if (idecfg->installed && idecfg->protocol == IDE_ATAPI) {
-		MemMapFile changeCDButton(ppc_button_changecd, sizeof ppc_button_changecd);
-		int *i = new int;
-		*i = 1;
-		gDisplay->insertMenuButton(changeCDButton, changeCDFunc, i);
-	}
-	gDisplay->finishMenu();*/
+    // Runtime optical media controls are provided by the UI hotkeys.
 }
 
 static const char *textlogo UNUSED =
@@ -399,8 +348,10 @@ int main(int argc, char *argv[])
         gConfig->acceptConfigEntryIntDef("page_table_pa", 0x00300000);
         gConfig->acceptConfigEntryIntDef("redraw_interval_msec", 20);
         gConfig->acceptConfigEntryStringDef("key_compose_dialog", "F11");
-        gConfig->acceptConfigEntryStringDef("key_change_cd_0", "none");
-        gConfig->acceptConfigEntryStringDef("key_change_cd_1", "none");
+        gConfig->acceptConfigEntryStringDef("key_change_cd_0", "F10");
+        gConfig->acceptConfigEntryStringDef("key_change_cd_1", "Shift+F10");
+        gConfig->acceptConfigEntryStringDef("key_eject_cd_0", "Ctrl+F10");
+        gConfig->acceptConfigEntryStringDef("key_eject_cd_1", "Ctrl+Shift+F10");
         gConfig->acceptConfigEntryStringDef("key_toggle_mouse_grab", "F12");
         gConfig->acceptConfigEntryStringDef("key_toggle_full_screen", "Ctrl+Alt+Return");
         gConfig->acceptConfigEntryIntDef("headless", 0);
@@ -494,6 +445,16 @@ int main(int argc, char *argv[])
             exit(1);
         }
 
+        const char *mediaKeys[] = {"key_change_cd_0", "key_change_cd_1", "key_eject_cd_0", "key_eject_cd_1"};
+        for (int i = 0; i < 4; i++) {
+            String value;
+            gConfig->getConfigString(mediaKeys[i], value);
+            int &key = i < 2 ? keyConfig.key_change_cd[i] : keyConfig.key_eject_cd[i - 2];
+            if (!SystemKeyboard::convertStringToKeycode(key, value)) {
+                ht_printf("Invalid optical media hotkey: %s\n", mediaKeys[i]);
+                exit(1);
+            }
+        }
 
         gcard_init_modes();
 

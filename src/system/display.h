@@ -247,6 +247,7 @@ public:
 	void	setAnsiColor(vcp color);
 
 	/* ui */
+    virtual void changeCD(unsigned optical, bool eject);
 		void insertMenuButton(Stream &str, void (*callback)(void *), void *p);
 	virtual	void updateTitle() = 0;
 	virtual	void finishMenu() = 0;

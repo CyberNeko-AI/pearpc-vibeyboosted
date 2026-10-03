@@ -56,6 +56,7 @@ public:
 		void toggleFullScreen();
 	virtual	void displayShow();
     virtual bool pollBootEvents();
+    virtual void changeCD(unsigned optical, bool eject);
 	virtual	void convertCharacteristicsToHost(DisplayCharacteristics &aHostChar, const DisplayCharacteristics &aClientChar);
 	virtual	bool changeResolution(const DisplayCharacteristics &aCharacteristics);
 	virtual	bool changeResolutionREAL(const DisplayCharacteristics &aCharacteristics);

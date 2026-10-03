@@ -25,6 +25,7 @@
 #include "system/display.h"
 #include "idedevice.h"
 #include "cd.h"
+#include <string>
 
 /*
  *	IDE is handled by PCI and therefore has no base address
@@ -62,6 +63,11 @@ struct IDEConfig {
 };
 
 IDEConfig *ide_get_config(int disk);
+
+// Optical indices enumerate installed ATAPI drives, not master/slave slots.
+// An empty image path requests ejection. Safe to call from the host UI thread.
+bool ide_request_cd_change(unsigned optical, const std::string &image);
+bool ide_take_media_result(bool &success, std::string &message);
 
 void ide_init();
 void ide_done();

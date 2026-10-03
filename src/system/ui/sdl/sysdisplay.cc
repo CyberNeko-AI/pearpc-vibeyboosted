@@ -98,6 +98,12 @@ void SDLSystemDisplay::updateTitle()
 	SystemKeyboard::convertKeycodeToString(key, key_toggle_mouse_grab);
 	String curTitle;
 	curTitle.assignFormat("%s - [%s %s mouse]", mTitle, key.contentChar(), (isMouseGrabbed() ? "disables" : "enables"));
+	int changeKey = gKeyboard->getKeyConfig().key_change_cd[0];
+    if (changeKey != 0xff && SystemKeyboard::convertKeycodeToString(key, changeKey)) {
+        curTitle += " - [";
+        curTitle += key;
+        curTitle += " changes CD]";
+    }
 	if (gSDLWindow) {
 		SDL_SetWindowTitle(gSDLWindow, curTitle.contentChar());
 	}

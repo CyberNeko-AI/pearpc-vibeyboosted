@@ -115,6 +115,27 @@ Examples:
 ./src/ppc --headless myconfig.cfg
 ```
 
+### Change discs while running (SDL)
+
+Use **F10** to select a new image for the first installed optical drive, or
+**Ctrl+F10** to eject it. For a second optical drive, use **Shift+F10** and
+**Ctrl+Shift+F10**. On macOS, the Fn key may be needed to send function keys.
+The first optical drive can be either IDE master or slave.
+
+Canceling the picker or selecting an unreadable/invalid image preserves the old
+disc. If the guest has locked it, eject/unmount it inside the guest first.
+Pending changes wait for an active PIO/DMA transfer to finish; the guest then
+receives a media-change notification on its next command. Images must contain
+2048-byte sectors (e.g. ISO); raw 2352-byte BIN/CUE and compressed DMG files are
+not supported by this image backend. The selected path is not saved to the
+configuration: restart uses the configured image.
+
+The shortcuts are configurable with `key_change_cd_0`, `key_change_cd_1`,
+`key_eject_cd_0` and `key_eject_cd_1`. Use `"none"` to disable a shortcut.
+Older configurations that explicitly set `key_change_cd_0 = "none"` need that
+setting changed to enable the picker. Controls are available after PROM boot
+selection completes. Runtime file selection requires the SDL UI (SDL 3.2+).
+
 ### Keyboard
 
 Keypresses are sent directly to the client when the PearPC window is focused. PearPC uses a raw keyboard layout -- configure your preferred layout in the client OS.

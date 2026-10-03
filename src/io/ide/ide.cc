@@ -22,6 +22,9 @@
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
+#include <atomic>
+#include <mutex>
+#include <deque>
 
 #include "tools/data.h"
 #include "tools/snprintf.h"
@@ -306,6 +309,84 @@ IDEState gIDEState;
 	| BM_IDE_SR_DMA0_CAPABLE | BM_IDE_SR_DMA1_CAPABLE | BM_IDE_SR_SIMPLEX_ONLY \
 	| BM_IDE_SR_ACTIVE)
 
+struct MediaRequest {
+    bool pending = false;
+    std::string image;
+};
+static std::mutex mediaMutex;
+static std::atomic<bool> mediaPending(false);
+static MediaRequest mediaRequests[2];
+static std::deque<std::pair<bool, std::string> > mediaResults;
+
+bool ide_request_cd_change(unsigned optical, const std::string &image)
+{
+    if (optical >= 2) return false;
+    std::lock_guard<std::mutex> lock(mediaMutex);
+    if (mediaRequests[optical].pending) return false;
+    mediaRequests[optical].image = image;
+    mediaRequests[optical].pending = true;
+    mediaPending.store(true);
+    return true;
+}
+
+bool ide_take_media_result(bool &success, std::string &message)
+{
+    std::lock_guard<std::mutex> lock(mediaMutex);
+    if (mediaResults.empty()) return false;
+    success = mediaResults.front().first;
+    message = mediaResults.front().second;
+    mediaResults.pop_front();
+    return true;
+}
+
+// Called only on the CPU thread, before IDE register accesses. Delay while
+// packet/PIO data is outstanding or a DMA command still owns the device.
+static void service_media_requests()
+{
+    if (!mediaPending.load()) return;
+    std::lock_guard<std::mutex> lock(mediaMutex);
+    bool pending = false;
+    for (unsigned optical = 0; optical < 2; optical++) {
+        MediaRequest &request = mediaRequests[optical];
+        if (!request.pending) continue;
+        int slot = -1;
+        unsigned index = 0;
+        for (int i = 0; i < 2; i++) {
+            if (gIDEState.config[i].installed && gIDEState.config[i].protocol == IDE_ATAPI) {
+                if (index++ == optical) { slot = i; break; }
+            }
+        }
+        CDROMDeviceFile *dev = slot < 0 ? nullptr :
+            dynamic_cast<CDROMDeviceFile *>(gIDEState.config[slot].device);
+        if (dev && (dev->isAcquired() || gIDEState.state[slot].mode == IDE_TRANSFER_MODE_DMA ||
+                    (gIDEState.state[slot].status & (IDE_STATUS_BSY | IDE_STATUS_DRQ)))) {
+            pending = true;
+            continue;
+        }
+        bool success = false;
+        std::string message;
+        if (!dev) {
+            message = "No image-backed CD-ROM is installed in this position.";
+        } else if (dev->isLocked()) {
+            message = "The guest has locked this disc. Eject/unmount it in the guest before changing media.";
+        } else if (request.image.empty()) {
+            dev->eject();
+            success = true;
+            message = "Disc ejected.";
+        } else if (!dev->changeDataSource(request.image.c_str())) {
+            message = dev->getError();
+        } else {
+            dev->setReady(true);
+            dev->notifyMediaChange();
+            success = true;
+            message = "Inserted " + request.image;
+        }
+        mediaResults.emplace_back(success, "CD-ROM " + std::to_string(optical + 1) + ": " + message);
+        request.pending = false;
+    }
+    mediaPending.store(pending);
+}
+
 class IDE_Controller: public PCI_Device {
 public:
 
@@ -586,7 +667,7 @@ void drive_ident()
 		gIDEState.state[gIDEState.drive].status = IDE_STATUS_RDY | IDE_STATUS_SKC;
 	}
 
-	void atapi_command_error(uint8 sense_key, uint8 asc)
+	void atapi_command_error(uint8 sense_key, uint8 asc, uint8 ascq = 0)
 	{
 		memset(&gIDEState.config[gIDEState.drive].cdrom.sense, 0, sizeof gIDEState.config[gIDEState.drive].cdrom.sense);
 		gIDEState.state[gIDEState.drive].error = sense_key << 4;
@@ -596,7 +677,7 @@ void drive_ident()
     
 		gIDEState.config[gIDEState.drive].cdrom.sense.sense_key = sense_key;
 		gIDEState.config[gIDEState.drive].cdrom.sense.asc = asc;
-		gIDEState.config[gIDEState.drive].cdrom.sense.ascq = 0;
+		gIDEState.config[gIDEState.drive].cdrom.sense.ascq = ascq;
 	}
 
 	void atapi_start_send_command(uint8 command, int reqlen, int alloclen, int sectorpos=0, int sectorsize=2048)
@@ -666,6 +747,12 @@ void receive_atapi_packet()
 	IO_IDE_TRACE("ATAPI command(%02x)\n", command);
 	CDROMDevice *dev = (CDROMDevice *)gIDEState.config[gIDEState.drive].device;
 	uint8 *sector = gIDEState.state[gIDEState.drive].sector;
+    if (command != IDE_ATAPI_COMMAND_INQUIRY && command != IDE_ATAPI_COMMAND_REQ_SENSE &&
+        dev->consumeMediaChange()) {
+        atapi_command_error(IDE_ATAPI_SENSE_UNIT_ATTENTION, 0x28);
+        raiseInterrupt(0);
+        return;
+    }
 	switch (command) {
 	case IDE_ATAPI_COMMAND_TEST_READY:
 		if (dev->isReady()) {
@@ -697,6 +784,7 @@ void receive_atapi_packet()
 		sector[15] = gIDEState.config[gIDEState.drive].cdrom.sense.key_spec[0];
 		sector[16] = gIDEState.config[gIDEState.drive].cdrom.sense.key_spec[1];
 		sector[17] = gIDEState.config[gIDEState.drive].cdrom.sense.key_spec[2];
+        memset(&gIDEState.config[gIDEState.drive].cdrom.sense, 0, sizeof(Sense));
 		raiseInterrupt(0);
 		break;
 	}
@@ -726,23 +814,22 @@ void receive_atapi_packet()
 		raiseInterrupt(0);
 		break;
 	}
-	case IDE_ATAPI_COMMAND_START_STOP: {
-		bool eject = sector[4] & 2;
-		bool start = sector[4] & 1;
-		if (!eject && !start) {
-			atapi_command_nop();
-		} else if (!eject && start) {
-			atapi_command_nop();
-		} else if (eject && !start) {
-                        dev->eject();
-			atapi_command_nop();
-		} else {
-			dev->eject();
-			atapi_command_nop();
-		}
-		raiseInterrupt(0);
-		break;
-	}
+    case IDE_ATAPI_COMMAND_START_STOP: {
+        bool eject = sector[4] & 2;
+        bool start = sector[4] & 1;
+        if (eject && !start && dev->isLocked()) {
+            atapi_command_error(IDE_ATAPI_SENSE_ILLEGAL_REQUEST, 0x53, 0x02);
+        } else if (eject && !start) {
+            dev->eject();
+            atapi_command_nop();
+        } else if (start && !dev->isReady()) {
+            atapi_command_error(IDE_ATAPI_SENSE_NOT_READY, IDE_ATAPI_ASC_MEDIUM_NOT_PRESENT);
+        } else {
+            atapi_command_nop();
+        }
+        raiseInterrupt(0);
+        break;
+    }
 	case IDE_ATAPI_COMMAND_TOGGLE_LOCK:
 		if (dev->isReady()) {
 			dev->setLock(sector[4] & 1);
@@ -2053,6 +2140,7 @@ void ide_read_reg(uint32 addr, uint32 &data, int size)
  */	
 	virtual bool	readDeviceIO(uint r, uint32 port, uint32 &data, uint size)
 	{
+        service_media_requests();
 		switch (r) {
 		case IDE_PCI_REG_0_CMD:
 			ide_read_reg(port, data, size);
@@ -2068,6 +2156,7 @@ void ide_read_reg(uint32 addr, uint32 &data, int size)
 	
 	virtual bool	writeDeviceIO(uint r, uint32 port, uint32 data, uint size)
 	{
+        service_media_requests();
 		switch (r) {
 		case IDE_PCI_REG_0_CMD:
 			ide_write_reg(port, data, size);
@@ -2202,7 +2291,7 @@ void ide_init()
 				gIDEState.config[DISK].lba = false;
 			} else if (ext == "dvd") {
 				gIDEState.config[DISK].protocol = IDE_ATAPI;
-				gIDEState.config[DISK].device = new CDROMDeviceFile(name.contentChar());
+				gIDEState.config[DISK].device = new CDROMDeviceFile(name.contentChar(), true);
 				((CDROMDeviceFile *)gIDEState.config[DISK].device)->activateDVD(true);
 
 				((CDROMDeviceFile *)gIDEState.config[DISK].device)->changeDataSource(img.contentChar());

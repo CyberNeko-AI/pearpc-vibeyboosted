@@ -156,6 +156,8 @@
 
 struct KeyboardCharacteristics
 {
+    int key_change_cd[2] = {0xff, 0xff};
+    int key_eject_cd[2] = {0xff, 0xff};
 	int key_compose_dialog;
 	int key_toggle_mouse_grab;
 	int key_toggle_full_screen;

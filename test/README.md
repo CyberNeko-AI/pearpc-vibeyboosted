@@ -153,3 +153,14 @@ new physical page. Both are included in `run_tests.sh`.
 
 Rebuild with `test/build_ppc_elf.sh test_bat_tlb` or
 `test/build_ppc_elf.sh test_bat_code`. Their small ELF fixtures are included.
+
+## Runtime optical-media regression (macOS)
+
+After building normally, run `bash test/run_cd_media_tests.sh`.
+It exercises the real IDE packet/PIO/DMA paths, with only guest DMA memory and
+PIC interrupts replaced by test doubles. Cases cover optical numbering when
+the drive is IDE slave, queued changes during PIO and the DMA start handshake,
+unit attention and request-sense clearing, failed opens, invalid images,
+media locks, guest/host eject, reinsert, independent optical drives, configured
+DVD identity, and data integrity before and after a swap. Fixtures are small
+temporary images. The native SDL file-picker interaction still needs a GUI check.

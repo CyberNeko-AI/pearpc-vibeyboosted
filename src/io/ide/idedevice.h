@@ -46,6 +46,8 @@ public:
 	virtual	~IDEDevice();
 		bool	acquire();
 		bool	release();	
+    // Controller-thread observation only; host requests do not touch device state.
+    bool isAcquired() const { return mAcquired; }
 	virtual void	setError(const char *error);
 	virtual char *	getError();
 	virtual uint	getBlockSize() = 0;

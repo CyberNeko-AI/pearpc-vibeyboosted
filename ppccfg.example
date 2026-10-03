@@ -38,7 +38,12 @@ redraw_interval_msec = 10
 ##
 
 key_compose_dialog = "F11"
-key_change_cd_0 = "none"
+# SDL: select/eject media in the first or second installed optical drive.
+# Cancel leaves the existing disc inserted. Eject in the guest first if locked.
+key_change_cd_0 = "F10"
+key_change_cd_1 = "Shift+F10"
+key_eject_cd_0 = "Ctrl+F10"
+key_eject_cd_1 = "Ctrl+Shift+F10"
 key_toggle_mouse_grab = "F12"
 key_toggle_full_screen = "Alt+Return"
 

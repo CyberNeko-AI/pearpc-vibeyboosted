@@ -624,3 +624,8 @@ bool SystemDisplay::setFullscreenMode(bool fullscreen)
 	}
 	return mFullscreenChanged;
 }
+
+void SystemDisplay::changeCD(unsigned optical, bool eject)
+{
+    ht_printf("Runtime CD-ROM controls require the SDL UI.\n");
+}

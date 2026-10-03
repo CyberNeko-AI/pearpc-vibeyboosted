@@ -54,6 +54,12 @@ bool SystemKeyboard::handleEvent(const SystemEvent &ev)
 	if (ev.key.keycode == KEY_ALTGR) mRAlt = ev.key.pressed ? KEYCODE_RALT : 0;
 	if (ev.key.keycode == KEY_SHIFT) mShift = ev.key.pressed ? KEYCODE_SHIFT : 0;
 	int keycode = ev.key.keycode | mCtrl | mRAlt | mLAlt | mShift;
+    for (unsigned i = 0; i < 2; i++) {
+        if (keycode == keyConfig.key_change_cd[i] || keycode == keyConfig.key_eject_cd[i]) {
+            if (ev.key.pressed) gDisplay->changeCD(i, keycode == keyConfig.key_eject_cd[i]);
+            return true;
+        }
+    }
 	if (keycode == keyConfig.key_toggle_mouse_grab) {
 		if (ev.key.pressed) gDisplay->setMouseGrab(!gDisplay->isMouseGrabbed());
 		return true;

@@ -57,6 +57,7 @@ class CDROMDevice: public IDEDevice {
 protected:
 	bool		mLocked;
 	bool		mReady;
+    bool mMediaChanged;
 	Container	*mFeatures, *mProfiles;
 	int		curProfile;
 	bool		is_dvd;
@@ -65,6 +66,8 @@ public:
 	virtual		~CDROMDevice ();
 
 	virtual	bool	isReady();
+    void notifyMediaChange() { mMediaChanged = true; }
+    bool consumeMediaChange() { bool changed = mMediaChanged; mMediaChanged = false; return changed; }
 		bool	isLocked();
 	virtual bool	setLock(bool aLocked);
 		bool	toggleLock();
@@ -98,12 +101,13 @@ protected:
 class CDROMDeviceFile: public CDROMDevice {
 	SYS_FILE	*mFile;
 	LBA		curLBA;
+    bool mForceDVD;
 	uint32		mCapacity;
 	byte		*mMmapBase;
 	FileOfs		mMmapSize;
 	FileOfs		mCurrentOffset;
 public:
-			CDROMDeviceFile(const char *name);
+			CDROMDeviceFile(const char *name, bool forceDVD = false);
 	virtual		~CDROMDeviceFile();
 
 	virtual	uint32	getCapacity();

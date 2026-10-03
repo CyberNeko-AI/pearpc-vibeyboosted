@@ -27,6 +27,10 @@
 #include <cstdio>
 #include <unistd.h>
 #include <cstring>
+#include <atomic>
+#include <mutex>
+#include <string>
+#include "io/ide/ide.h"
 
 // for stopping the CPU
 #include "cpu/cpu.h"
@@ -75,6 +79,71 @@ void sys_sdl_reset_mouse_accum()
 {
 	sMouseAccumX = 0.0f;
 	sMouseAccumY = 0.0f;
+}
+
+// SDL may deliver file-dialog callbacks on another thread. Only enqueue
+// requests there; display messages and manipulate the window on the UI thread.
+static std::atomic<bool> mediaDialogOpen(false);
+static bool runtimeMediaEnabled = false;
+static unsigned mediaDialogIndex[2] = {0, 1};
+static std::mutex dialogErrorMutex;
+static std::string dialogError;
+
+static void SDLCALL mediaSelected(void *userdata, const char *const *files, int filter)
+{
+    unsigned optical = *static_cast<unsigned *>(userdata);
+    if (!files) {
+        std::lock_guard<std::mutex> lock(dialogErrorMutex);
+        dialogError = SDL_GetError();
+    } else if (files[0] && !ide_request_cd_change(optical, files[0])) {
+        std::lock_guard<std::mutex> lock(dialogErrorMutex);
+        dialogError = "A disc change is already waiting for this drive to finish its current transfer.";
+    }
+    mediaDialogOpen.store(false);
+}
+
+void SDLSystemDisplay::changeCD(unsigned optical, bool eject)
+{
+    if (optical >= 2 || mediaDialogOpen.load()) return;
+    setMouseGrab(false);
+    if (!runtimeMediaEnabled) {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "PearPC CD-ROM",
+                                 "Disc changes are available after the guest starts.", gSDLWindow);
+        return;
+    }
+    if (eject) {
+        if (!ide_request_cd_change(optical, "")) {
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "PearPC CD-ROM",
+                                     "A media request is already pending for this drive.", gSDLWindow);
+        }
+        return;
+    }
+    static const SDL_DialogFileFilter filters[] = {
+        {"CD/DVD images (2048-byte sectors)", "iso;img;cdr;dvd"}, {"All files", "*"}
+    };
+    mediaDialogOpen.store(true);
+    SDL_ShowOpenFileDialog(mediaSelected, &mediaDialogIndex[optical], gSDLWindow,
+                           filters, 2, nullptr, false);
+}
+
+static void showMediaResults()
+{
+    std::string error;
+    {
+        std::lock_guard<std::mutex> lock(dialogErrorMutex);
+        error.swap(dialogError);
+    }
+    if (!error.empty()) {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "PearPC CD-ROM", error.c_str(), gSDLWindow);
+    }
+    bool success;
+    std::string message;
+    while (ide_take_media_result(success, message)) {
+        fprintf(stderr, "[CD-ROM] %s\n", message.c_str());
+        if (!success) {
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, "PearPC CD-ROM", message.c_str(), gSDLWindow);
+        }
+    }
 }
 
 static bool handleSDLEvent(const SDL_Event &event)
@@ -276,6 +345,7 @@ bool SDLSystemDisplay::pollBootEvents()
 
 void runUI()
 {
+    runtimeMediaEnabled = true;
 	// This runs on the main thread -- the SDL event loop
 	sd->setFullscreenMode(sd->mFullscreen);
 
@@ -289,6 +359,7 @@ void runUI()
 				running = handleSDLEvent(event);
 			}
 		}
+		showMediaResults();
 		// Periodic redraw regardless of events
 		gDisplay->displayShow();
 	}
@@ -300,6 +371,7 @@ void runUI()
 
 void doneUI()
 {
+    runtimeMediaEnabled = false;
 	if (gSDLTexture) SDL_DestroyTexture(gSDLTexture);
 	if (gSDLRenderer) SDL_DestroyRenderer(gSDLRenderer);
 	if (gSDLWindow) SDL_DestroyWindow(gSDLWindow);
