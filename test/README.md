@@ -135,3 +135,21 @@ SECTIONS {
     .bss  : { *(.bss) }
 }
 ```
+
+`run_aarch64_codegen_tests.sh` also runs `test_branch_state.cc`: 1,280 native
+branch executions check that the former XNU `mapDrainBusy` instruction pattern
+does not invoke an OS-specific state-modification hook. This prevents silently
+rewriting guest mapping counts when an ordinary branch is translated.
+
+## BAT mapping regression tests
+
+`test_bat_tlb.S` verifies data-cache translation invalidation when a DBAT is
+installed, revoked, retargeted, or resized. Six checks cover both stale PTE and
+stale BAT translations, plus recalculation of BRPN when BL changes. The data
+segment has a PROM-created PTE; its effective address must not be assumed to
+match its physical address. `test_bat_code.S` switches IBAT1L while executing
+inside its mapped block and checks that the next instruction comes from the
+new physical page. Both are included in `run_tests.sh`.
+
+Rebuild with `test/build_ppc_elf.sh test_bat_tlb` or
+`test/build_ppc_elf.sh test_bat_code`. Their small ELF fixtures are included.

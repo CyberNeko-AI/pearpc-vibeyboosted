@@ -19,6 +19,8 @@ TESTS=(
     test/test_loop.cfg
     test/test_alu.cfg
     test/test_mem.cfg
+    test/test_bat_tlb.cfg
+    test/test_bat_code.cfg
     test/test_dsi.cfg
     test/test_multiple_dsi.cfg
     test/test_branch_loop.cfg

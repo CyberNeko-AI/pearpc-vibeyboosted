@@ -222,6 +222,4 @@ JITCFlow ppc_opc_gen_stvewx(JITC &aJITC);
 JITCFlow ppc_opc_gen_dstst(JITC &aJITC);
 JITCFlow ppc_opc_gen_dss(JITC &aJITC);
 
-extern "C" void ppc_safeguard_map_drain_busy(PPC_CPU_State *cpu);
-
 #endif

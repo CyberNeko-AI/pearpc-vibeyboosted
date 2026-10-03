@@ -1493,31 +1493,6 @@ int ppc_opc_stwcx_(PPC_CPU_State &aCPU)
     return PPC_MMU_OK;
 }
 
-extern "C" void ppc_safeguard_map_drain_busy(PPC_CPU_State *cpu)
-{
-    // On a single-processor (UP) system, if interrupts are disabled (MSR[EE] == 0),
-    // waiting for another CPU to release a busy mapping is an architectural impossibility.
-    // In Darwin XNU's mapDrainBusy (hw_vm.s), the current CPU already owns 1 busy count
-    // and is waiting for other CPUs to drop their counts to 0 (so total busy count == 1).
-    // If busy > 1 under MSR[EE] == 0 on UP, it will spin forever.
-    // We normalize the busy count to 1 so mapDrainBusy can complete and unblock the installer.
-    if (!(cpu->msr & MSR_EE)) {
-        uint32 mapping_addr = cpu->gpr[3];
-        uint32 val;
-        if (ppc_read_effective_word(*cpu, mapping_addr, val) == PPC_MMU_OK) {
-            uint32 busy = (val >> 24) & 0xFF;
-            if (busy > 1) {
-                PPC_CPU_WARN(
-                    "[UP-SAFEGUARD] mapDrainBusy: mapping %08x busy=%u on UP with MSR[EE]=0, normalizing to 1\n",
-                    mapping_addr, busy);
-                val = (val & 0x00FFFFFF) | 0x01000000;
-                ppc_write_effective_word(*cpu, mapping_addr, val);
-                cpu->gpr[4] = 1;
-            }
-        }
-    }
-}
-
 int ppc_opc_sth(PPC_CPU_State &aCPU)
 {
     int rS, rA;

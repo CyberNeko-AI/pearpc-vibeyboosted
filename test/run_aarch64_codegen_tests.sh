@@ -18,3 +18,8 @@ cpu_dir=src/cpu/cpu_jitc_aarch64
     test/test_stwcx_fragments.cc "$cpu_dir/jitc.o" "$cpu_dir/ppc_mmu.o" \
     "$cpu_dir/ppc_alu.o" "$cpu_dir/aarch64asm.o" -o "$test_dir/test_stwcx_fragments"
 "$test_dir/test_stwcx_fragments"
+
+"${CXX:-c++}" -std=c++11 -DHAVE_CONFIG_H -I. -Isrc -Wl,-dead_strip \
+    test/test_branch_state.cc "$cpu_dir/jitc.o" "$cpu_dir/ppc_alu.o" \
+    "$cpu_dir/aarch64asm.o" -o "$test_dir/test_branch_state"
+"$test_dir/test_branch_state"
