@@ -2509,6 +2509,73 @@ JITCFlow ppc_opc_gen_sthx(JITC &jitc)
     return flowContinue;
 }
 
+// Diagnostics must not walk the guest MMU: translation could set PTE bits or
+// raise an exception. Use only an existing data TLB entry to identify aliases.
+static bool trace_reservation_pa(const PPC_CPU_State &cpu, uint32 ea, uint32 &pa)
+{
+    if (!(cpu.msr & MSR_DR)) {
+        pa = ea;
+        return true;
+    }
+    uint32 idx = (ea >> 12) & (TLB_ENTRIES - 1);
+    uint32 tag = ea & ~0xfffu;
+    uint64 host;
+    if (cpu.tlb_data_write_eff[idx] == tag) {
+        host = cpu.tlb_data_write_phys[idx];
+    } else if (cpu.tlb_data_read_eff[idx] == tag) {
+        host = cpu.tlb_data_read_phys[idx];
+    } else {
+        return false;
+    }
+    uint64 base = reinterpret_cast<uint64>(gMemory);
+    if (!gMemory || host < base || host - base >= gMemorySize) return false;
+    pa = static_cast<uint32>(host - base) + (ea & 0xfff);
+    return pa < gMemorySize;
+}
+
+// Opt-in diagnostics: architectural state after a conditional store. Never
+// modify guest memory or invoke device reads to obtain diagnostic information.
+static int trace_reservation(PPC_CPU_State &cpu)
+{
+    static FILE *log = nullptr;
+    static bool attempted = false;
+    if (!attempted) {
+        attempted = true;
+        const char *path = getenv("PEARPC_TRACE_RESERVATIONS");
+        if (!path || !*path) return 0;
+        log = fopen(path, "w");
+        if (!log) {
+            perror("PearPC reservation trace");
+            return 0;
+        }
+        setvbuf(log, nullptr, _IOLBF, 0);
+        fprintf(log, "pc,opcode,lr,msr,ea,value,reserve,cr,pa,sp\n");
+    }
+    if (!log) return 0;
+    int rS, rA, rB;
+    PPC_OPC_TEMPL_X(cpu.current_opc, rS, rA, rB);
+    uint32 ea = (rA ? cpu.gpr[rA] : 0) + cpu.gpr[rB];
+    uint32 pa;
+    char physical[9] = "unknown";
+    if (trace_reservation_pa(cpu, ea, pa)) snprintf(physical, sizeof(physical), "%08x", pa);
+    fprintf(log, "%08x,%08x,%08x,%08x,%08x,%08x,%08x,%08x,%s,%08x\n",
+            cpu.pc, cpu.current_opc, cpu.lr, cpu.msr, ea, cpu.gpr[rS], cpu.reserve, cpu.cr,
+            physical, cpu.gpr[1]);
+    return 0;
+}
+
+static bool trace_reservation_at(JITC &jitc)
+{
+    const char *path = getenv("PEARPC_TRACE_RESERVATIONS");
+    if (!path || !*path) return false;
+    const char *range = getenv("PEARPC_TRACE_RESERVATIONS_RANGE");
+    if (!range || !*range) return true;
+    unsigned start, end;
+    if (sscanf(range, "%x:%x", &start, &end) != 2) return false;
+    uint32 pa = jitc.currentPage->baseaddress + jitc.pc;
+    return pa >= start && pa < end;
+}
+
 /*
  *  === lwarx / stwcx. ===
  */
@@ -2578,6 +2645,9 @@ JITCFlow ppc_opc_gen_stwcx_(JITC &jitc)
     jitc.asmSTRw_cpu(W16, offsetof(PPC_CPU_State, cr));
     jitc.asmResolveFixup(bne_fixup);
     jitc.asmResolveFixup(cbz_fixup);
+    if (trace_reservation_at(jitc)) {
+        ppc_opc_gen_interpret(jitc, trace_reservation);
+    }
     return flowContinue;
 }
 

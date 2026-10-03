@@ -71,3 +71,6 @@ validate.log
 # Small, reproducible bare-metal BAT regression fixtures.
 !test/test_bat_tlb.elf
 !test/test_bat_code.elf
+
+# Local crash dumps and per-run diagnostic output.
+/crash-captures/

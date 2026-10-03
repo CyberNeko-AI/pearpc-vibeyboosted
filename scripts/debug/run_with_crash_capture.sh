@@ -22,6 +22,16 @@ LOG="$OUT/console.log"
 printf 'PearPC crash capture: %s\n' "$OUT"
 printf 'Logs: %s\n' "$LOG"
 
+# The diagnostic launcher uses "auto" so every run has a distinct trace.
+if [ "${PEARPC_TRACE_RESERVATIONS:-}" = auto ]; then
+    PEARPC_TRACE_RESERVATIONS="$OUT/atomics.csv"
+    export PEARPC_TRACE_RESERVATIONS
+fi
+if [ -n "${PEARPC_TRACE_RESERVATIONS:-}" ]; then
+    printf 'Atomic trace: %s (PA range: %s)\n' "$PEARPC_TRACE_RESERVATIONS" "${PEARPC_TRACE_RESERVATIONS_RANGE:-all}"
+    printf 'path=%s\nrange=%s\n' "$PEARPC_TRACE_RESERVATIONS" "${PEARPC_TRACE_RESERVATIONS_RANGE:-all}" > "$OUT/atomic-trace.settings"
+fi
+
 "$ROOT/src/ppc" \
     --memdump-file="$OUT/guest-memory.bin" \
     --framebuffer-dump-file="$OUT/framebuffer.bin" \
