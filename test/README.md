@@ -165,6 +165,19 @@ media locks, guest/host eject, reinsert, independent optical drives, configured
 DVD identity, and data integrity before and after a swap. Fixtures are small
 temporary images. The native SDL file-picker interaction still needs a GUI check.
 
+## Targeted guest-PC snapshots (AArch64)
+
+Set `PEARPC_TRACE_PCS` to up to 32 comma-separated, aligned hexadecimal guest
+**effective** addresses and `PEARPC_TRACE_PC_FILE` to a CSV path. The JIT logs
+stored CPU registers at matching addresses, capped at 20,000 records. Set
+`PEARPC_TRACE_USER_ONLY=1` to exclude supervisor-mode hits. Register tracing
+alone does not read guest memory. Optional `PEARPC_TRACE_SNAPSHOT_FILE`,
+`PEARPC_TRACE_SNAPSHOT_PC` and `PEARPC_TRACE_SNAPSHOT_OCCURRENCE` capture RAM and
+MMU/register JSON once at the selected probe; other I/O threads may still run.
+`run_with_crash_capture.sh` accepts `auto` for either output file to keep it in
+the run directory, and `PEARPC_BINARY` selects an alternate executable. The Tiger-specific launcher and its
+version-dependent addresses are documented in `doc/OSX104_KEYBOARD_SETUP_20261004.md`.
+
 ## AltiVec whole-vector shifts
 
 `bash test/run_vector_shift_tests.sh` builds the actual AArch64 fallback and

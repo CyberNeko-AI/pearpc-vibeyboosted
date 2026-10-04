@@ -7,6 +7,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <pthread.h>
 
 #include "system/sysvm.h"
@@ -1039,6 +1040,120 @@ static void traceInit()
     // }
 }
 
+// Optional, bounded architectural-state probes at selected guest effective
+// PCs. Register logging does not read guest memory or modify guest state;
+// a separately enabled one-shot snapshot can also save RAM and MMU metadata.
+static uint32 tracePCs[32];
+static unsigned tracePCCount;
+static bool tracePCInitialized;
+
+static void initPCTrace()
+{
+    if (tracePCInitialized) return;
+    tracePCInitialized = true;
+    const char *list = getenv("PEARPC_TRACE_PCS");
+    if (!list || !getenv("PEARPC_TRACE_PC_FILE")) return;
+    while (*list && tracePCCount < 32) {
+        char *end;
+        unsigned long value = strtoul(list, &end, 16);
+        if (end == list || value > 0xffffffffUL || (value & 3) || (*end && *end != ',')) {
+            fprintf(stderr, "[PC-TRACE] Invalid aligned hexadecimal PC list\n");
+            tracePCCount = 0;
+            return;
+        }
+        tracePCs[tracePCCount++] = static_cast<uint32>(value);
+        list = *end ? end + 1 : end;
+    }
+    if (*list) {
+        fprintf(stderr, "[PC-TRACE] At most 32 PCs can be traced\n");
+        tracePCCount = 0;
+    }
+}
+
+static void snapshotAtTracePC(PPC_CPU_State *cpu, uint32 ea)
+{
+    static unsigned hits;
+    static bool saved;
+    const char *path = getenv("PEARPC_TRACE_SNAPSHOT_FILE");
+    const char *point = getenv("PEARPC_TRACE_SNAPSHOT_PC");
+    if (saved || !path || !*path || !point || strtoul(point, nullptr, 16) != ea) return;
+    const char *which = getenv("PEARPC_TRACE_SNAPSHOT_OCCURRENCE");
+    unsigned occurrence = which ? static_cast<unsigned>(strtoul(which, nullptr, 10)) : 1;
+    if (++hits != occurrence) return;
+    saved = true;
+    extern byte *gMemory;
+    FILE *out = fopen(path, "wb");
+    if (!out) { perror("PearPC trace snapshot"); return; }
+    size_t written = fwrite(gMemory, 1, gMemorySize, out);
+    bool complete = written == gMemorySize;
+    if (fclose(out) != 0) complete = false;
+    if (!complete) {
+        fprintf(stderr, "[PC-SNAPSHOT] Incomplete RAM capture: %zu/%u bytes\n", written, gMemorySize);
+        return;
+    }
+    std::string meta = std::string(path) + ".json";
+    out = fopen(meta.c_str(), "w");
+    if (!out) { perror("PearPC trace snapshot metadata"); return; }
+    fprintf(out, "{\"pc\":\"%08x\",\"msr\":\"%08x\",\"sdr1\":\"%08x\",\"lr\":\"%08x\",\"cr\":\"%08x\",\"gpr\":[",
+            ea, cpu->msr, cpu->sdr1, cpu->lr, cpu->cr);
+    for (unsigned i = 0; i < 32; i++) fprintf(out, "%s\"%08x\"", i ? "," : "", cpu->gpr[i]);
+    fprintf(out, "],\"sr\":[");
+    for (unsigned i = 0; i < 16; i++) fprintf(out, "%s\"%08x\"", i ? "," : "", cpu->sr[i]);
+    fprintf(out, "],\"dbatu\":[");
+    for (unsigned i = 0; i < 4; i++) fprintf(out, "%s\"%08x\"", i ? "," : "", cpu->dbatu[i]);
+    fprintf(out, "],\"dbatl\":[");
+    for (unsigned i = 0; i < 4; i++) fprintf(out, "%s\"%08x\"", i ? "," : "", cpu->dbatl[i]);
+    fprintf(out, "]}\n");
+    if (fclose(out) != 0) {
+        fprintf(stderr, "[PC-SNAPSHOT] Could not finish metadata file\n");
+        return;
+    }
+    fprintf(stderr, "[PC-SNAPSHOT] Saved %u bytes at guest PC %08x to %s\n", gMemorySize, ea, path);
+}
+
+static void traceGuestPC(PPC_CPU_State *cpu, uint32 ea)
+{
+    static const bool userOnly = getenv("PEARPC_TRACE_USER_ONLY") != nullptr;
+    if (userOnly && !(cpu->msr & MSR_PR)) return;
+    static FILE *log;
+    static bool attempted;
+    static unsigned records;
+    if (!attempted) {
+        attempted = true;
+        log = fopen(getenv("PEARPC_TRACE_PC_FILE"), "w");
+        if (!log) { perror("PearPC PC trace"); return; }
+        setvbuf(log, nullptr, _IOLBF, 0);
+        fprintf(log, "pc,lr,cr,msr");
+        for (unsigned i = 0; i < 32; i++) fprintf(log, ",r%u", i);
+        fprintf(log, "\n");
+    }
+    snapshotAtTracePC(cpu, ea);
+    if (!log || records >= 20000) return;
+    fprintf(log, "%08x,%08x,%08x,%08x", ea, cpu->lr, cpu->cr, cpu->msr);
+    for (unsigned i = 0; i < 32; i++) fprintf(log, ",%08x", cpu->gpr[i]);
+    fprintf(log, "\n");
+    if (++records == 20000) fprintf(stderr, "[PC-TRACE] Reached 20000-record limit\n");
+}
+
+static void emitPCTrace(JITC &jitc)
+{
+    initPCTrace();
+    for (unsigned i = 0; i < tracePCCount; i++) {
+        if ((tracePCs[i] & 0xfff) != jitc.pc) continue;
+        // Flush deferred architectural state before using host flags. A guest
+        // physical page can have several virtual aliases: check the EA at run time.
+        jitc.clobberAll();
+        jitc.asmLDRw_cpu(W16, offsetof(PPC_CPU_State, current_code_base));
+        jitc.asmMOV(W17, tracePCs[i] & ~0xfffu);
+        jitc.asmCMPw(W16, W17);
+        NativeAddress skip = jitc.asmBccFixup(A64_NE);
+        jitc.asmMOV(X0, X20);
+        jitc.asmMOV(W1, tracePCs[i]);
+        jitc.asmCALL(reinterpret_cast<NativeAddress>(traceGuestPC));
+        jitc.asmResolveFixup(skip);
+    }
+}
+
 static NativeAddress jitcNewEntrypoint(JITC &jitc, ClientPage *cp, uint32 baseaddr, uint32 ofs)
 {
     ofs &= 0xffc;
@@ -1085,6 +1200,7 @@ static NativeAddress jitcNewEntrypoint(JITC &jitc, ClientPage *cp, uint32 basead
         }
         jitc.current_opc = ppc_word_from_BE(*(uint32 *)&physpage[ofs]);
         jitcDebugLogNewInstruction(jitc);
+        emitPCTrace(jitc);
 
         JITCFlow flow = ppc_gen_opc(jitc);
         if (flow == flowContinue) {

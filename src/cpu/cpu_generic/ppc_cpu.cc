@@ -114,7 +114,8 @@ void ppc_cpu_run()
     gDebugger->mAlwaysShowRegs = true;
     PPC_CPU_TRACE("execution started at %08x\n", gCPU.pc);
 
-    gGenericTraceLog = fopen("trace_generic.log", "w");
+    const char *tracePath = getenv("PEARPC_GENERIC_TRACE_FILE");
+    gGenericTraceLog = fopen(tracePath ? tracePath : "trace_generic.log", "w");
     if (gGenericTraceLog) {
         setvbuf(gGenericTraceLog, NULL, _IOFBF, 256 * 1024);
     }
@@ -154,6 +155,11 @@ void ppc_cpu_run()
                     gCPU.gpr[2], gCPU.gpr[3], gCPU.gpr[4], gCPU.gpr[5], gCPU.dec, (unsigned long long)gCPU.pdec);
             if (gGenericTraceCount % 100 == 0) {
                 fflush(gGenericTraceLog);
+            }
+            if (gGenericTraceCount == 200000) {
+                fclose(gGenericTraceLog);
+                gGenericTraceLog = NULL;
+                fprintf(stderr, "[TRACE] Generic dispatch trace stopped at 200000 records\n");
             }
         }
 
