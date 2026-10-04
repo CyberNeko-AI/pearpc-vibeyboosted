@@ -608,6 +608,10 @@ void ppc_opc_mtspr()
         ppc_exception(PPC_EXC_PROGRAM, PPC_EXC_PROGRAM_PRIV);
         return;
     }
+    if (spr2 == 16 && spr1 >= 16) {
+        // BAT writes can change the next instruction's physical page.
+        ppc_mmu_tlb_invalidate();
+    }
     switch (spr2) {
     case 0:
         switch (spr1) {

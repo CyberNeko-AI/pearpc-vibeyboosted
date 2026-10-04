@@ -91,7 +91,7 @@ inline int FASTCALL ppc_effective_to_physical(uint32 addr, int flags, uint32 &re
 					uint32 offset = BAT_EA_OFFSET(addr);
 					uint32 page = BAT_EA_11(addr);
 					page &= ~bl17;
-					page |= BATL_BRPN(gCPU.ibatl[i]);
+					page |= BATL_BRPN(gCPU.ibatl[i]) & bl17;
 					// fixme: check access rights
 					result = page | offset;
 					return PPC_MMU_OK;
@@ -119,7 +119,7 @@ inline int FASTCALL ppc_effective_to_physical(uint32 addr, int flags, uint32 &re
 					uint32 offset = BAT_EA_OFFSET(addr);
 					uint32 page = BAT_EA_11(addr);
 					page &= ~bl17;
-					page |= BATL_BRPN(gCPU.dbatl[i]);
+					page |= BATL_BRPN(gCPU.dbatl[i]) & bl17;
 					// fixme: check access rights
 					result = page | offset;
 					return PPC_MMU_OK;
