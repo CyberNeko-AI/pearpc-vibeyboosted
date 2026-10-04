@@ -62,21 +62,34 @@ ATADeviceFile::ATADeviceFile(const char *name, const char *filename)
 {
 	mFile = sys_fopen(filename, SYS_OPEN_READ | SYS_OPEN_WRITE);
 	if (mFile) {
-		sys_fseek(mFile, 0, SYS_SEEK_END);
-		uint64 size = sys_ftell(mFile);
-		uint64 cyl = size / 516096ULL;
-		blocks = size / 512;
-		if ((size % 516096) || cyl > 65535) {
-			// we only support disk images with 16 heads and 63 spt
-			sys_fclose(mFile);
-			mFile = NULL;
-			setError("invalid format (filesize isn't a multiple of 516096)");
-		} else {
-			init(16, cyl, 63);
-			mMmapSize = size;
-			// Attempt to memory-map the disk image for zero-copy I/O
-			mMmapBase = (byte *)sys_mmap_file(mFile, size, false /* read-write */);
-		}
+        const uint64 cylinderBytes = 16ULL * 63 * 512;
+        const uint64 maxBytes = 65535ULL * cylinderBytes;
+        int seekError = sys_fseek(mFile, 0, SYS_SEEK_END);
+        FileOfs fileSize = sys_ftell(mFile);
+        const char *error = NULL;
+        if (seekError || fileSize == (FileOfs)-1 || fileSize == 0 || (fileSize % 512)) {
+            error = "invalid raw disk size (must be nonzero and a multiple of 512 bytes)";
+        } else if ((uint64)fileSize > maxBytes) {
+            error = "raw disk exceeds the supported capacity (65535 cylinders of 16 heads and 63 sectors)";
+        }
+        if (error) {
+            sys_fclose(mFile);
+            mFile = NULL;
+            setError(error);
+        } else {
+            uint64 size = (uint64)fileSize;
+            blocks = size / 512;
+            // CHS describes complete cylinders; LBA exposes every sector,
+            // including the tail of an image such as an exact 8 GiB disk.
+            // Preserve the historical geometry of cylinder-aligned images.
+            if (size >= cylinderBytes) {
+                init(16, size / cylinderBytes, 63);
+            } else {
+                init(1, blocks, 1);
+            }
+            mMmapSize = size;
+            mMmapBase = (byte *)sys_mmap_file(mFile, size, false /* read-write */);
+        }
 	} else {
 		char buf[256];
 		ht_snprintf(buf, sizeof buf, "%s: could not open file (%s)", filename, strerror(errno));

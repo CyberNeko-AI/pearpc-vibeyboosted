@@ -607,8 +607,9 @@ void drive_ident()
 		id[57] = sectors;
 		id[58] = sectors >> 16;
 		id[59] = 0; // multisector bla
-		id[60] = sectors;       // lba capacity
-		id[61] = sectors >> 16; // lba capacity cont.
+        uint32 lbaSectors = gIDEState.config[gIDEState.drive].device->getBlockCount();
+        id[60] = lbaSectors;       // full LBA capacity, independent of CHS rounding
+        id[61] = lbaSectors >> 16;
 		id[62] = 0;       // obsolete single word dma (linux dma_1word)
 		id[63] = 7|0x404; // multiple word dma info   (linux dma_mword)
 		id[64] = 1; // eide pio modes

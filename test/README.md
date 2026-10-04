@@ -223,3 +223,17 @@ CPU interrupt mask or run a guest kernel. It checks every press/release in
 `dmesg`, both initial TACK levels, command/reply turnaround, packet lengths and
 mouse packets. No window or VM image is opened. Before the completion-IRQ fix,
 the first keyboard packet stalls with `B=38 IFR=04` and no IRQ pending.
+
+## ATA raw-image capacity
+
+After a macOS build, run:
+
+```sh
+sh test/run_ata_capacity_tests.sh build/a64
+```
+
+The test creates temporary sparse images (including an exact 8 GiB image),
+checks the full 64-bit PROM file size and the controller's IDENTIFY words,
+and writes/reads the final sector through guest PIO registers. It covers
+partial cylinders, existing cylinder-aligned images and invalid sizes. It
+never opens the configured VM images. Current coverage: 7,952 checks.

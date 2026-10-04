@@ -42,7 +42,7 @@ IDEDeviceFile(IDEDevice &aid) : id(aid)
 
 virtual FileOfs getSize() const
 {
-	return id.getBlockSize() * id.getBlockCount();
+    return (FileOfs)id.getBlockSize() * id.getBlockCount();
 }
 
 virtual void seek(FileOfs offset)

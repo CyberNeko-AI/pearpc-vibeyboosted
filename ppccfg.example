@@ -114,8 +114,9 @@ prom_driver_graphic = "video.x"
 ##	PCI IDE Config
 ##
 ##	Drive type will be set according to file extension:
-##		.img: Harddisk (filesize must be multiple of 516096)
+##		.img: Harddisk (nonzero filesize, multiple of 512 bytes)
 ##		.iso: CD-Rom
+##	Raw hard disks retain the maximum of 65535 * 16 * 63 sectors (512 bytes each).
 ##	Or you can override this by specifying the type via
 ##	pci_ide0_master_type / pci_ide0_slave_type
 ##
