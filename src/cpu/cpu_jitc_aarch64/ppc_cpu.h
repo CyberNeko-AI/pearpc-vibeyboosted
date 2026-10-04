@@ -126,7 +126,10 @@ struct PPC_CPU_State {
     bool ext_exception;
     bool stop_exception;
     bool singlestep_ignore;
-    byte align[3];
+    // Reuse a padding byte so assembly-visible offsets remain unchanged.
+    // Interpreter handlers often return 0 even after ppc_exception().
+    bool interpreter_exception;
+    byte align[2];
 
     uint32 pagetable_base;
     uint32 pagetable_hashmask;
@@ -174,6 +177,9 @@ struct PPC_CPU_State {
     // Stored here so JIT code can load them via [X20, #offset].
     byte *stubs[PPC_STUB_COUNT];
 } PACKED;
+
+static_assert(offsetof(PPC_CPU_State, pagetable_base) == offsetof(PPC_CPU_State, exception_pending) + 8,
+              "Preserve the assembly CPU-state layout around exception flags");
 
 /*
  *  On aarch64, CPU state is accessed via a dedicated register (X20)

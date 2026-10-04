@@ -60,6 +60,8 @@ extern "C" void jitc_fatal_gpr9_corrupt(PPC_CPU_State *cpu);
 static inline void ppc_opc_gen_interpret_prologue(JITC &jitc)
 {
     jitc.clobberAll();
+    // Discard the previous instruction's synchronous-exception marker.
+    jitc.emit32(a64_STRBw(WZR, X20, offsetof(PPC_CPU_State, interpreter_exception)));
     // Store current opcode to CPU state
     jitc.asmMOV(W16, jitc.current_opc);
     jitc.asmSTRw_cpu(W16, offsetof(PPC_CPU_State, current_opc));
@@ -84,12 +86,18 @@ static inline void ppc_opc_gen_interpret(JITC &jitc, int (*func)(PPC_CPU_State &
     // Call interpreter function
     jitc.asmCALL((NativeAddress)func);
 
-    // No exception check here. Non-load/store opcodes don't trigger DSI.
-    // Async interrupts (DEC/ext) are handled by the heartbeat at the
-    // next page dispatch (ppc_new_pc_asm).
-    // Opcodes that can trigger synchronous exceptions (sc, rfi, mtmsr,
-    // load/store) use GEN_INTERPRET_ENDBLOCK, GEN_INTERPRET_BRANCH,
-    // or GEN_INTERPRET_LOADSTORE instead.
+    // SPR and other non-memory helpers can raise synchronous exceptions
+    // while returning 0. Never run the next native instruction after the
+    // exception has changed MSR and npc. An explicit marker also handles
+    // the corner case where the vector happens to equal the sequential PC.
+    jitc.emit32(a64_LDRBw(W0, X20, offsetof(PPC_CPU_State, interpreter_exception)));
+    uint exc_path = 4 + JITC::asmCALL_cpu_size;
+    jitc.emitAssure(4 + exc_path);
+    NativeAddress target = jitc.asmHERE() + 4 + exc_path;
+    jitc.asmCBZw(W0, 4 + exc_path);
+    jitc.asmLDRw_cpu(W0, offsetof(PPC_CPU_State, npc));
+    jitc.asmCALL_cpu(PPC_STUB_NEW_PC);
+    jitc.asmAssertHERE(target, "interpret_exception");
 }
 
 /*

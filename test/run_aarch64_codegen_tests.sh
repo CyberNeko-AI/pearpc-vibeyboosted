@@ -25,3 +25,8 @@ cpu_dir="$build_root/src/cpu/cpu_jitc_aarch64"
     "$source_root/test/test_branch_state.cc" "$cpu_dir/jitc.o" "$cpu_dir/ppc_alu.o" \
     "$cpu_dir/aarch64asm.o" -o "$test_dir/test_branch_state"
 "$test_dir/test_branch_state"
+
+"${CXX:-c++}" -std=c++11 -DHAVE_CONFIG_H -I"$build_root" -I"$build_root/src" -I"$source_root/src" -Wl,-dead_strip \
+    "$source_root/test/test_interpret_exception.cc" "$cpu_dir/jitc.o" "$cpu_dir/ppc_exc.o" \
+    "$cpu_dir/ppc_alu.o" "$build_root/src/tools/libtools.a" "$cpu_dir/aarch64asm.o" -o "$test_dir/test_interpret_exception"
+"$test_dir/test_interpret_exception"

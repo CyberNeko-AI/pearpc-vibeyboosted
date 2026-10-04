@@ -237,3 +237,27 @@ checks the full 64-bit PROM file size and the controller's IDENTIFY words,
 and writes/reads the final sector through guest PIO registers. It covers
 partial cylinders, existing cylinder-aligned images and invalid sizes. It
 never opens the configured VM images. Current coverage: 7,952 checks.
+
+## Interpreter-fallback synchronous exceptions
+
+`test_spr_exception.S` enters user mode and probes PVR, SDR1, DEC and HID0
+through `mfspr`/`mtspr`. Its Program handler checks the fault PC/privilege cause
+and skips a guard store to unmapped MMIO. The pre-fix AArch64 JIT executed that
+store with MSR already cleared and aborted; generic completes successfully.
+Legal user XER/VRSAVE accesses must still fall through. This fixture is part of
+`run_tests.sh` (17 tests total).
+
+Rebuild with `test/build_ppc_elf.sh test_spr_exception`, or LLVM cross tools:
+
+```sh
+clang --target=powerpc-unknown-linux-gnu -c test/test_spr_exception.S -o /tmp/test_spr_exception.o
+ld.lld -m elf32ppc -T test/test_loop.ld -o test/test_spr_exception.elf /tmp/test_spr_exception.o
+```
+
+The commands require an LLVM installation with the PowerPC target and LLD.
+`run_aarch64_codegen_tests.sh` additionally executes
+`test_interpret_exception.cc`: 1,024 native fallback executions crossing
+forward/backward fragment boundaries, with and without an exception. It uses
+the real exception handler, verifies SRR0/SRR1, MSR, reservation invalidation,
+clearing of stale exception markers, and the case where the vector equals
+`pc + 4`. MMU invalidation and the final dispatch destination are test doubles.

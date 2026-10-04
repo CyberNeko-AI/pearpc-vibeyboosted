@@ -41,8 +41,8 @@ extern PPC_CPU_State *gCPU;
  * and sets npc to the exception vector address.
  *
  * For the JIT interpreter path (GEN_INTERPRET), this modifies
- * CPU state inline. The generated code checks the return value
- * of the interpreter function and dispatches to npc on exception.
+ * CPU state inline and marks interpreter_exception. The generated fallback
+ * checks that flag and dispatches to npc even if the handler returns zero.
  */
 bool FASTCALL ppc_exception(PPC_CPU_State &aCPU, uint32 type, uint32 flags, uint32 a)
 {
@@ -122,6 +122,7 @@ bool FASTCALL ppc_exception(PPC_CPU_State &aCPU, uint32 type, uint32 flags, uint
     aCPU.have_reservation = false;
     aCPU.msr = 0;
     aCPU.npc = type;
+    aCPU.interpreter_exception = true;
     return true;
 }
 
