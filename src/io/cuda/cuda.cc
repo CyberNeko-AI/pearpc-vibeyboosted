@@ -608,13 +608,6 @@ void cuda_write(uint32 addr, uint32 data, int size)
 			}
 		}
 		IO_CUDA_TRACE2("[CUDA-REGB] state=%d rB=%02x data=%02x ifr=%02x\n", gCUDA.state, gCUDA.rB, data, gCUDA.rIFR);
-		// This pic_raise_interrupt is correct and required.
-		// The CUDA driver relies on the PIC interrupt to know when
-		// shift register transfers complete. Only raise when SR_INT
-		// is set in IFR (not unconditionally as the original code did).
-		// Removing this entirely breaks CUDA init on all backends.
-		if (gCUDA.rIFR & SR_INT)
-			pic_raise_interrupt(IO_PIC_IRQ_CUDA);
 		if (!(gCUDA.rB & TIP) && (data & TIP)) {
 			gCUDA.rIFR |= SR_INT;
 //			IO_CUDA_TRACE2("v from: %08x %d\n", gCPU.pc, gCUDA.state);
@@ -637,6 +630,14 @@ void cuda_write(uint32 addr, uint32 data, int size)
 		} else {
 			gCUDA.rB = data;
 		}
+        // Publish the IRQ after all handshake edges have updated SR_INT.
+        // In particular, releasing TIP after the final byte needs its own
+        // completion interrupt. Linux via-cuda delivers the packet in its
+        // read_done state; without this IRQ the last key-up waits for the
+        // next input packet and the console keeps repeating the held key.
+        if (gCUDA.rIFR & SR_INT) {
+            pic_raise_interrupt(IO_PIC_IRQ_CUDA);
+        }
 		IO_CUDA_TRACE("->B(%02x)\n", gCUDA.rB);
 		break;
 	}

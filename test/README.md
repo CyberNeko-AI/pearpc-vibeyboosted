@@ -207,3 +207,19 @@ The zero-shift case must not merge the two 64-bit halves.
 `test_vec_shift_zero.S` additionally exercises instruction decode, AltiVec
 loads/stores and the normal CPU execution paths through a bare-metal ELF. It is
 included in `run_tests.sh`; rebuild with `test/build_ppc_elf.sh test_vec_shift_zero`.
+
+## CUDA keyboard packet completion
+
+After a POSIX build, run:
+
+```sh
+sh test/run_cuda_keyboard_tests.sh build/a64
+```
+
+The test includes the actual CUDA implementation and drives its registers in the
+order used by Linux 2.4 `via-cuda.c`, including the final `read_done` interrupt.
+PIC delivery is replaced with a pending-IRQ flag; the test does not model the
+CPU interrupt mask or run a guest kernel. It checks every press/release in
+`dmesg`, both initial TACK levels, command/reply turnaround, packet lengths and
+mouse packets. No window or VM image is opened. Before the completion-IRQ fix,
+the first keyboard packet stalls with `B=38 IFR=04` and no IRQ pending.
