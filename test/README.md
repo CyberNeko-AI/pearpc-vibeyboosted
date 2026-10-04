@@ -164,3 +164,15 @@ unit attention and request-sense clearing, failed opens, invalid images,
 media locks, guest/host eject, reinsert, independent optical drives, configured
 DVD identity, and data integrity before and after a swap. Fixtures are small
 temporary images. The native SDL file-picker interaction still needs a GUI check.
+
+## AltiVec whole-vector shifts
+
+`bash test/run_vector_shift_tests.sh` builds the actual AArch64 fallback and
+portable interpreter handlers with UBSan, and compares both to an independent
+byte-stream oracle: shifts 0..7 in both directions, 256 deterministic input
+vectors, and destination aliasing either source (12,288 cases per backend).
+The zero-shift case must not merge the two 64-bit halves.
+
+`test_vec_shift_zero.S` additionally exercises instruction decode, AltiVec
+loads/stores and the normal CPU execution paths through a bare-metal ELF. It is
+included in `run_tests.sh`; rebuild with `test/build_ppc_elf.sh test_vec_shift_zero`.

@@ -27,6 +27,7 @@ TESTS=(
     test/test_fpu_exc.cfg
     test/test_fpu_arith.cfg
     test/test_altivec.cfg
+    test/test_vec_shift_zero.cfg
     test/test_crlogical.cfg
     test/test_defflags.cfg
     test/test_mid_block.cfg

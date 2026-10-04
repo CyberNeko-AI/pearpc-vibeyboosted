@@ -74,3 +74,6 @@ validate.log
 
 # Local crash dumps and per-run diagnostic output.
 /crash-captures/
+
+# Whole-vector shift regression ELF.
+!test/test_vec_shift_zero.elf

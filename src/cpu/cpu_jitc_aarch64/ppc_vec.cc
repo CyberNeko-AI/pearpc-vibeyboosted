@@ -357,7 +357,11 @@ int ppc_opc_vsr(PPC_CPU_State &aCPU)
     r.d[0] = aCPU.vr[vrA].d[0] >> shift;
     r.d[1] = aCPU.vr[vrA].d[1] >> shift;
 
-    VECT_D(r, 1) |= VECT_D(aCPU.vr[vrA], 0) << (64 - shift);
+    // With shift == 0, a cross-half shift by 64 is undefined in C++.
+    // A zero-bit vector shift is an exact copy, with no cross-half merge.
+    if (shift != 0) {
+        VECT_D(r, 1) |= VECT_D(aCPU.vr[vrA], 0) << (64 - shift);
+    }
 
     aCPU.vr[vrD] = r;
     return 0;
@@ -419,7 +423,11 @@ int ppc_opc_vsl(PPC_CPU_State &aCPU)
     r.d[0] = aCPU.vr[vrA].d[0] << shift;
     r.d[1] = aCPU.vr[vrA].d[1] << shift;
 
-    VECT_D(r, 0) |= VECT_D(aCPU.vr[vrA], 1) >> (64 - shift);
+    // With shift == 0, a cross-half shift by 64 is undefined in C++.
+    // A zero-bit vector shift is an exact copy, with no cross-half merge.
+    if (shift != 0) {
+        VECT_D(r, 0) |= VECT_D(aCPU.vr[vrA], 1) >> (64 - shift);
+    }
 
     aCPU.vr[vrD] = r;
     return 0;
