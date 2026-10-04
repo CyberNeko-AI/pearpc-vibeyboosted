@@ -10,7 +10,7 @@ libdebug_a_SOURCES = asm.cc asm.h ppcdis.cc ppcdis.h ppcopc.cc ppcopc.h tracers.
 debugparse.y debugtype.h lex.l lex.h parsehelper.c parsehelper.h debugger.cc debugger.h \
 stdfuncs.cc stdfuncs.h debugparse.h x86opc.cc x86opc.h x86dis.cc x86dis.h
 
-AM_CPPFLAGS = -I ..
+AM_CPPFLAGS = -I$(top_builddir)/src -I$(top_srcdir)/src
 
 BUILT_SOURCES = debugparse.h
 lex.$(OBJEXT): debugparse.h

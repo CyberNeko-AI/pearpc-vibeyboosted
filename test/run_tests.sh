@@ -9,11 +9,22 @@ set -euo pipefail
 
 PPC="${1:-./src/ppc}"
 TIMEOUT="${2:-30}"
+SOURCE_ROOT=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
 
 if [ ! -x "$PPC" ]; then
     echo "ERROR: $PPC not found or not executable (build first)" >&2
     exit 1
 fi
+
+# Resolve the selected executable before entering an isolated runtime directory.
+# Configs use relative test/*.elf, video.x and NVRAM paths. Keep their writes
+# (and interpreter traces) out of both the source and build trees.
+PPC="$(CDPATH= cd "$(dirname "$PPC")" && pwd)/$(basename "$PPC")"
+RUN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pearpc-headless-tests.XXXXXX")
+trap 'rm -rf "$RUN_DIR"' EXIT
+mkdir "$RUN_DIR/test"
+ln -s "$SOURCE_ROOT/video.x" "$RUN_DIR/video.x"
+cd "$RUN_DIR"
 
 TESTS=(
     test/test_loop.cfg
@@ -65,13 +76,14 @@ for cfg in "${TESTS[@]}"; do
     name="${name%.cfg}"
     elf="${cfg%.cfg}.elf"
 
-    if [ ! -f "$elf" ]; then
+    if [ ! -f "$SOURCE_ROOT/$elf" ]; then
         printf "%-24s SKIP (no .elf)\n" "$name"
         skipped=$((skipped + 1))
         continue
     fi
 
-    if output=$(run_with_timeout "$TIMEOUT" "$PPC" --headless "$cfg" 2>&1); then
+    ln -s "$SOURCE_ROOT/$elf" "$elf"
+    if output=$(run_with_timeout "$TIMEOUT" "$PPC" --headless "$SOURCE_ROOT/$cfg" 2>&1); then
         printf "%-24s PASS\n" "$name"
         passed=$((passed + 1))
     else

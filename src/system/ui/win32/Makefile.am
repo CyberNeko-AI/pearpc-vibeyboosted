@@ -9,8 +9,8 @@ sysmouse.cc resources.h resources.rc
 
 EXTRA_DIST = ppc.ico
 
-INCLUDE_PATH = ../../..
-AM_CPPFLAGS = -I $(INCLUDE_PATH)
+AM_CPPFLAGS = -I$(top_builddir)/src -I$(top_srcdir)/src
 
 .rc.o:
-	windres -F pe-i386 --include-dir=$(INCLUDE_PATH) -i $< -o $@
+	windres -F pe-i386 --include-dir="$(srcdir)" --include-dir="$(top_builddir)/src" \
+		--include-dir="$(top_srcdir)/src" -i $< -o $@

@@ -9,4 +9,4 @@ ppc_vec.cc jitc.cc jitc.h jitc_debug.cc jitc_debug.h \
 jitc_types.h jitc_mmu.S jitc_tools.S aarch64asm.cc aarch64asm.h jitc_asm.h \
 jitc_common.h
 
-AM_CPPFLAGS = -I ../..
+AM_CPPFLAGS = -I$(top_builddir)/src -I$(top_srcdir)/src

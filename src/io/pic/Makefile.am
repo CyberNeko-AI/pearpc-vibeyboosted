@@ -4,4 +4,4 @@ noinst_LIBRARIES = libpic.a
 
 libpic_a_SOURCES = pic.cc pic.h
 
-AM_CPPFLAGS = -I ../..
+AM_CPPFLAGS = -I$(top_builddir)/src -I$(top_srcdir)/src

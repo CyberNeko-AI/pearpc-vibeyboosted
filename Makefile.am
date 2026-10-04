@@ -11,5 +11,5 @@ dist2: distdir
 dist-all2: dist2
 
 .PHONY: test
-test:
-	@test/run_tests.sh
+test: all
+	@"$(srcdir)/test/run_tests.sh" "$(abs_builddir)/src/ppc"

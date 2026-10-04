@@ -29,4 +29,4 @@ EXTRA_DIST = gui.h
 SUBDIRS = $(THE_UI_DIR)
 EXTRA_SUBDIRS = beos qt gtk win32 sdl x11
 
-AM_CPPFLAGS = -I ../..
+AM_CPPFLAGS = -I$(top_builddir)/src -I$(top_srcdir)/src

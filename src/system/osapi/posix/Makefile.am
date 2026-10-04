@@ -6,4 +6,4 @@ libsosapi_a_SOURCES = sysclipboard.cc sysfile.cc \
 sysinit.cc sysethtun.cc systhread.cc systimer.cc syscdrom.cc types.h \
 sysvm.cc sysbt.cc slirpeth.cc
 
-AM_CPPFLAGS = -I ../../..
+AM_CPPFLAGS = -I$(top_builddir)/src -I$(top_srcdir)/src

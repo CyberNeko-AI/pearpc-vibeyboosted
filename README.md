@@ -36,7 +36,7 @@ The following operating systems run (to some extent) inside PearPC:
 
 On macOS:
 ```sh
-brew install autoconf automake sdl3 pkg-config
+brew install autoconf automake sdl3 pkg-config libslirp
 ```
 
 ### Compile
@@ -48,16 +48,59 @@ make
 ```
 
 The configure script auto-detects your platform. You can override with:
-- `--enable-cpu=generic|jitc_x86|jitc_x86_64`
+- `--enable-cpu=generic|jitc_x86|jitc_x86_64|jitc_aarch64`
 - `--enable-ui=sdl|x11|win32|beos`
 
 The binary is produced at `src/ppc`.
+
+### Shadow builds
+
+Builds outside the source directory use the existing Autotools setup; CMake is
+not required. Bootstrap once in the source tree, then configure each build
+independently. For example, from the repository root on Apple Silicon:
+
+```sh
+./autogen.sh
+# If this checkout was previously configured/built in place, first run:
+# make distclean
+mkdir -p build/a64 build/generic
+(cd build/a64 && ../../configure --enable-cpu=jitc_aarch64 --enable-ui=sdl)
+make -C build/a64 -j4
+make -C build/a64 test
+
+(cd build/generic && ../../configure --enable-cpu=generic --enable-ui=sdl)
+make -C build/generic -j4
+make -C build/generic test
+```
+
+Use a source tree with no in-place configuration (`config.status`) or leftover
+objects. If configure says the source directory is already configured, run
+`make distclean` **in the source root**, then retry the separate configure step.
+That removes the in-place executable and build configuration; keep any custom
+configure options to reuse them. It does not delete VM images or configurations.
+A freshly bootstrapped checkout needs no `distclean`.
+
+Each build has its own `config.h`, generated parser, objects, archives and
+`src/ppc`. To run a VM whose configuration uses relative image and `video.x`
+paths, keep the working directory at the repository root:
+
+```sh
+./build/a64/src/ppc ppccfg.osx
+# Existing crash-capture scripts can use the same binary:
+PEARPC_BINARY="$PWD/build/a64/src/ppc" scripts/debug/run_with_crash_capture.sh ppccfg.osx
+```
+
+`build/` is ignored by Git. Build directories can also live outside the checkout;
+invoke the source tree's `configure` by its absolute path in that case. Run
+`make -C build/a64 clean` or `distclean` to clean only that build.
+See [shadow-build validation](doc/SHADOW_BUILD.md) for implementation details and
+[test instructions](test/README.md) for standalone host tests.
 
 ### Platform Notes
 
 | Host | CPU Backend | UI Backend |
 |------|-------------|------------|
-| macOS (Apple Silicon) | generic (interpreter) | SDL3 |
+| macOS (Apple Silicon) | jitc_aarch64 or generic | SDL3 |
 | macOS (Intel) | jitc_x86_64 or generic | SDL3 |
 | Linux (x86_64) | jitc_x86_64 | SDL3 or X11 |
 | Windows | jitc_x86 or jitc_x86_64 | Win32 native |

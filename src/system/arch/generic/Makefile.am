@@ -3,4 +3,4 @@ AUTOMAKE_OPTIONS = foreign
 noinst_LIBRARIES = libsarch.a
 libsarch_a_SOURCES = sysfeatures.h sysvaccel.cc sysendian.h
 
-AM_CPPFLAGS = -I ../../..
+AM_CPPFLAGS = -I$(top_builddir)/src -I$(top_srcdir)/src

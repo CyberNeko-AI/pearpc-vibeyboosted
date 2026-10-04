@@ -61,6 +61,24 @@ override the timeout:
 test/run_tests.sh ./src/ppc 60   # 60-second timeout per test
 ```
 
+For a shadow build, `make -C build/a64 test` builds and tests that directory's
+binary. The runner resolves configurations and ELF fixtures from its own source
+tree and uses a temporary runtime directory for NVRAM, boot dumps and interpreter
+traces, leaving the source tree untouched. You can also select a binary explicitly:
+
+```sh
+test/run_tests.sh ./build/a64/src/ppc 60
+```
+
+The standalone host tests accept the configured build directory as their first
+argument (omitting it preserves the in-place build default):
+
+```sh
+bash test/run_aarch64_codegen_tests.sh build/a64
+bash test/run_vector_shift_tests.sh build/a64
+sh test/run_cd_media_tests.sh build/a64
+```
+
 Run a single test:
 ```sh
 # Headless:

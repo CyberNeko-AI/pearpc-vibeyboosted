@@ -6,4 +6,4 @@ libio_a_SOURCES = io.cc io.h
 
 SUBDIRS = 3c90x rtl8139 prom graphic pic cuda pci ide macio nvram usb serial
 
-AM_CPPFLAGS = -I ..
+AM_CPPFLAGS = -I$(top_builddir)/src -I$(top_srcdir)/src

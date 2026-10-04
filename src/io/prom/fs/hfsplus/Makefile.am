@@ -7,4 +7,4 @@ hfs.h hfsp.h hfstime.c hfstime.h \
 libhfsp.c libhfsp.h os.cc os.h partitions.c partitions.h record.c record.h \
 swab.h unicode.c unicode.h volume.c volume.h
 
-AM_CPPFLAGS = -I ../../../..
+AM_CPPFLAGS = -I$(top_builddir)/src -I$(top_srcdir)/src

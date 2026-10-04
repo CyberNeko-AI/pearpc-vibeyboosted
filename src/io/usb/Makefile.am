@@ -4,4 +4,4 @@ noinst_LIBRARIES = libusb.a
 
 libusb_a_SOURCES = usb.cc usb.h
 
-AM_CPPFLAGS = -I ../..
+AM_CPPFLAGS = -I$(top_builddir)/src -I$(top_srcdir)/src

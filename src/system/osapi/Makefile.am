@@ -15,4 +15,4 @@ endif
 SUBDIRS = $(THE_OSAPI_DIR)
 EXTRA_SUBDIRS = beos posix win32
 
-AM_CPPFLAGS = -I ../..
+AM_CPPFLAGS = -I$(top_builddir)/src -I$(top_srcdir)/src

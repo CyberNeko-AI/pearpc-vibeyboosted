@@ -4,4 +4,4 @@ noinst_LIBRARIES = libui.a
 
 libui_a_SOURCES = gui.cc sysdisplay.cc syskeyboard.cc sysmouse.cc sysx11.cc sysx11.h
 
-AM_CPPFLAGS = -I ../../.. @X_CFLAGS@
+AM_CPPFLAGS = -I$(top_builddir)/src -I$(top_srcdir)/src @X_CFLAGS@
