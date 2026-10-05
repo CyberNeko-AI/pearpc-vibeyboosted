@@ -40,6 +40,7 @@
 #include "configparser.h"
 #include "prom.h"
 #include "promboot.h"
+#include "chrpboot.h"
 #include "promdt.h"
 #include "prommem.h"
 
@@ -1093,30 +1094,11 @@ bool mapped_load_chrp(File &f)
 			chrpReadWaitForString(f, buf, sizeof buf, expect);
 			IO_PROM_TRACE("found: %s\n", buf);
 			if (strcmp(tag, "<BOOT-SCRIPT>") == 0) {
-				char *bootpath = strstr(buf, "boot ");
-				if (bootpath) {
-					bootpath += 5;
-					char *bootpathend = strchr(bootpath, '\n');
-					if (!bootpathend) bootpathend = bootpath + strlen(bootpath);
-					char mybootpath[1024];
-					char *mybootargs = NULL;
-					strncpy(mybootpath, bootpath, sizeof mybootpath-1);
-					mybootpath[bootpathend-bootpath] = 0;
-					mybootpath[sizeof mybootpath-1] = 0;
-					mybootargs = mybootpath+ sizeof mybootpath-1;
-					int l = strlen(mybootpath);
-					for (int i=0; i<l; i++) {
-						if (mybootpath[i] == '\n') {
-							mybootpath[i] = 0;
-							break;
-						} else 	if (mybootpath[i] == ' ') {
-							mybootpath[i] = 0;
-							mybootargs = mybootpath+i+1;
-							break;
-						}
-					}
-					return chrpBoot(mybootpath, mybootargs);
-				}
+                std::string bootpath, bootargs;
+                if (prom_parse_chrp_boot_script(buf, bootpath, bootargs)) {
+                    return chrpBoot(bootpath.c_str(), bootargs.c_str());
+                }
+                IO_PROM_WARN("unsupported CHRP boot script (no recognized boot target)\n");
 			}
 #if 0
 			if (strcmp(tag, "<OS-BADGE-ICONS>") == 0) {

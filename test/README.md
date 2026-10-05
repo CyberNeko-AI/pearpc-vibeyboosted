@@ -261,3 +261,17 @@ forward/backward fragment boundaries, with and without an exception. It uses
 the real exception handler, verifies SRR0/SRR1, MSR, reservation invalidation,
 clearing of stale exception markers, and the case where the vector equals
 `pc + 4`. MMU invalidation and the final dispatch destination are test doubles.
+
+## CHRP boot-script recognition
+
+```sh
+sh test/run_chrp_boot_tests.sh
+# Optional: verify a captured Mandrake bootstrap and its expected target.
+sh test/run_chrp_boot_tests.sh bootfile.dump 'hd:2,\\yaboot'
+```
+
+This standalone ASan/UBSan test needs no configured build. It covers direct
+`boot`, literal-string `$boot`, ybin's `bootyaboot` definition/call, alternate
+CD definitions, comments, strings containing `boot`, malformed input and path
+length limits. It recognizes these patterns, without executing arbitrary Forth.
+There are 18 synthetic cases, plus the optional captured script.

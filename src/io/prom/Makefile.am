@@ -4,7 +4,7 @@ noinst_LIBRARIES = libprom.a
 
 SUBDIRS = fs
 
-libprom_a_SOURCES = prom.cc prom.h prommem.cc prommem.h fcode.cc fcode.h forth.cc \
+libprom_a_SOURCES = chrpboot.cc chrpboot.h prom.cc prom.h prommem.cc prommem.h fcode.cc fcode.h forth.cc \
 forth.h forthtable.h forthtable.cc promboot.cc promboot.h promosi.cc promosi.h \
 promdt.cc promdt.h
 

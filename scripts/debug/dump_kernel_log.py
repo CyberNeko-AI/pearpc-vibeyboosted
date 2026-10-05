@@ -42,6 +42,10 @@ def find_log_buffer_boundaries(data, start):
             break
         # Check if the byte after the NUL looks like a printk prefix
         candidate = prev_nul + 1
+        # A NUL immediately before this record gives the same start again.
+        # Stop rather than looping forever on an ordinary printk buffer.
+        if candidate >= buf_start:
+            break
         if candidate < len(data) - 2:
             if data[candidate:candidate + 1] == b'<' and \
                data[candidate + 1:candidate + 2] in b'0123456789' and \
