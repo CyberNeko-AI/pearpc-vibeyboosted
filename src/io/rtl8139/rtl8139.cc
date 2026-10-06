@@ -196,8 +196,14 @@ protected:
 	byte            mLast;
 	byte            mLastPackets[2];
 	uint32		mPid;
-	Packet		mPackets[MAX_PACKETS];
-	byte		mMAC[6];
+    Packet          mPackets[MAX_PACKETS];
+    byte            mMAC[6];
+    uint8           mEEPROMControl;
+    uint16          mEEPROMShift;
+    int             mEEPROMBits;
+    bool            mEEPROMReading;
+    uint16          mEEPROMReadValue;
+    int             mEEPROMReadBits;
 
 void PCIReset()
 {
@@ -206,7 +212,7 @@ void PCIReset()
 	// 0-3 set by totalReset()
 //	mConfig[0x04] = 0x07;	// io+memory+master
 
-	mConfig[0x08] = 0x00;	// revision
+    mConfig[0x08] = 0x10; // RTL8139 PCI revision
 	mConfig[0x09] = 0x00; 	//
 	mConfig[0x0a] = 0x00;	// ClassCode 0x20000: Ethernet network controller
 	mConfig[0x0b] = 0x02;	//
@@ -220,9 +226,14 @@ void PCIReset()
 
 	mConfig[0x34] = 0xdc;
 
-	mIORegSize[0] = 0x100;
-	mIORegType[0] = PCI_ADDRESS_SPACE_IO;
-	assignIOPort(0, 0x1800);
+    mIORegSize[0] = 0x100;
+    mIORegType[0] = PCI_ADDRESS_SPACE_IO;
+    assignIOPort(0, 0x1800);
+    // 8139too defaults to MMIO unless CONFIG_8139TOO_PIO is enabled.
+    // Keep the legacy I/O BAR and expose the same register bank through BAR1.
+    mIORegSize[1] = 0x100;
+    mIORegType[1] = PCI_ADDRESS_SPACE_MEM;
+    assignMemAddress(1, 0x80890000);
 }
 
 void totalReset()
@@ -232,11 +243,19 @@ void totalReset()
 	 *        this is reset ALL regs.
 	 */
 
-	mIORegSize[0] = 256; // 128;
-	mIORegType[0] = PCI_ADDRESS_SPACE_IO;
+    mIORegSize[0] = 256; // 128;
+    mIORegType[0] = PCI_ADDRESS_SPACE_IO;
+    mIORegSize[1] = 0x100;
+    mIORegType[1] = PCI_ADDRESS_SPACE_MEM;
 	// internals
-	mEEPROMWritable = false;
-	memset(&mRegisters, 0, sizeof mRegisters);
+    mEEPROMWritable = false;
+    mEEPROMControl = 0;
+    mEEPROMShift = 0;
+    mEEPROMBits = 0;
+    mEEPROMReading = false;
+    mEEPROMReadValue = 0;
+    mEEPROMReadBits = -1;
+    memset(&mRegisters, 0, sizeof mRegisters);
 	mIntStatus = 0;
 	mRingBufferSize = 8192;
 	mHead = 0;
@@ -254,15 +273,17 @@ void totalReset()
 	// negotiate link, actually set it to valid 100 half duplex
 	mRegisters.BMSR = 0x2025; // 0x4025;
 	mRegisters.BMCR = 0x2000; // 0x3010; // 100mbs, no ane
-	mRegisters.Config1 = 0x00; 
-	mRegisters.CommandRegister = 0x01;
+    mRegisters.Config1 = 0x00;
+    mRegisters.PCIRevisionID = 0x10;
+    mRegisters.CommandRegister = 0x01;
 	mRegisters.TxConfiguration = 0x63000000; // rtl8139
 	mRegisters.MediaStatus = 0x90;
 	mRegisters.CBA = 0;
 	mRegisters.CAPR = 0xfff0;
 
-	memset(mEEPROM, 0, sizeof mEEPROM);
-	mEEPROM[EEPROM_DeviceID] =		0x8139; //0x9200;
+    memset(mEEPROM, 0, sizeof mEEPROM);
+    mEEPROM[0] = 0x8129; // 93C46 signature: use an 8-bit address.
+    mEEPROM[EEPROM_DeviceID] =		0x8139; //0x9200;
 	mEEPROM[EEPROM_ManifacturerID] =	0x10ec; //0x6d50;
 	mEEPROM[EEPROM_PCIParam] =		0; //0x2940;
 	mEEPROM[EEPROM_RomInfo] =		0;	// no ROM
@@ -281,7 +302,13 @@ void totalReset()
 	mEEPROM[EEPROM_SmbAddress] =		0; //0x6300;
 	mEEPROM[EEPROM_PCIParam2] =		0; //0xffb7;
 	mEEPROM[EEPROM_PCIParam3] =		0; //0xb7b7;
-	mEEPROM[EEPROM_Checksum] =		0;
+    mEEPROM[EEPROM_Checksum] = 0;
+    // RTL8139 EEPROM words 7..9 contain the MAC in little-endian words.
+    // Set them after the legacy metadata fields: word 7 overlaps the old
+    // manufacturer-id placeholder in this historical model.
+    mEEPROM[7] = (uint16)mMAC[0] | ((uint16)mMAC[1] << 8);
+    mEEPROM[8] = (uint16)mMAC[2] | ((uint16)mMAC[3] << 8);
+    mEEPROM[9] = (uint16)mMAC[4] | ((uint16)mMAC[5] << 8);
 
 	// PCI config follow-ups
 	mConfig[0x00] = mEEPROM[EEPROM_SubsystemVendorID] & 0xff;	// vendor ID
@@ -421,9 +448,6 @@ virtual ~rtl8139_NIC()
 void readConfig(uint reg)
 {
 	//if (mVerbose) IO_RTL8139_TRACE("readConfig %02x\n", reg);
-	if (reg >= 0xdc) {
-		IO_RTL8139_WARN("readConfig(%x)\n", reg);
-	}
 	sys_lock_mutex(mLock);
 	PCI_Device::readConfig(reg);
 	sys_unlock_mutex(mLock);
@@ -433,11 +457,20 @@ void writeConfig(uint reg, int offset, int size)
 {
 	//if (mVerbose) IO_RTL8139_TRACE("writeConfig %02x, %d, %d\n", reg, offset, size);
 	sys_lock_mutex(mLock);
-	if (reg >= 0xdc) {
-		IO_RTL8139_WARN("writeConfig(%x, %d, %d)\n", reg, offset, size);
-	}
 	PCI_Device::writeConfig(reg, offset, size);
 	sys_unlock_mutex(mLock);
+}
+
+bool readDeviceMem(uint r, uint32 address, uint32 &data, uint size)
+{
+    if (r != 1) return false;
+    return readDeviceIO(0, address, data, size);
+}
+
+bool writeDeviceMem(uint r, uint32 address, uint32 data, uint size)
+{
+    if (r != 1) return false;
+    return writeDeviceIO(0, address, data, size);
 }
 
 bool readDeviceIO(uint r, uint32 port, uint32 &data, uint size)
@@ -448,7 +481,18 @@ bool readDeviceIO(uint r, uint32 port, uint32 &data, uint size)
 	sys_lock_mutex(mLock);
 //	IO_RTL8139_TRACE("readDevice has mLock\n");
 
-	if (port == 0x3e) {
+    if (port == 0x43 && size == 1) {
+        // 8139too identifies the chip from this byte, not PCI revision 0x08.
+        data = 0x60; // RTL-8139 rev K, accepted by Mandrake's driver.
+        retval = true;
+    } else if (port == 0x50 && size == 1) {
+        data = mEEPROMControl & 0xfe;
+        if (mEEPROMReading && mEEPROMReadBits >= 0 && mEEPROMReadBits < 16 &&
+            ((mEEPROMReadValue >> (15 - mEEPROMReadBits)) & 1)) {
+            data |= 0x01;
+        }
+        retval = true;
+    } else if (port == 0x3e) {
 		// IntStatus (no matter which window)
 		if (size != 2) {
 			IO_RTL8139_WARN("unaligned read from IntStatus\n");
@@ -498,7 +542,39 @@ bool writeDeviceIO(uint r, uint32 port, uint32 data, uint size)
 	sys_lock_mutex(mLock);
 //	IO_RTL8139_TRACE("writeDevice has mLock\n");
 	original = data;
-	if (port == 0x37) {
+    if (port == 0x50 && size == 1) {
+        uint8 value = data;
+        bool oldClock = (mEEPROMControl & 0x04) != 0;
+        bool newClock = (value & 0x04) != 0;
+        if (!(value & 0x08)) {
+            mEEPROMControl = value;
+            mEEPROMShift = 0;
+            mEEPROMBits = 0;
+            mEEPROMReading = false;
+            mEEPROMReadBits = -1;
+        } else if (!oldClock && newClock) {
+            if (!mEEPROMReading) {
+                mEEPROMShift = (uint16)((mEEPROMShift << 1) | ((value & 0x02) ? 1 : 0));
+                mEEPROMBits++;
+                if (mEEPROMBits >= 13 && (mEEPROMShift & 0x1f00) == 0x0600) {
+                    mEEPROMReadValue = mEEPROM[mEEPROMShift & 0xff];
+                    mEEPROMReading = true;
+                    mEEPROMReadBits = -1;
+                } else if (mEEPROMBits >= 11 && (mEEPROMShift & 0x07c0) == 0x0180) {
+                    mEEPROMReadValue = mEEPROM[mEEPROMShift & 0x3f];
+                    mEEPROMReading = true;
+                    mEEPROMReadBits = -1;
+                }
+            } else {
+                // The bit is exposed while the clock is high; the following
+                // low edge advances the serial output position.
+            }
+        } else if (oldClock && !newClock && mEEPROMReading && mEEPROMReadBits < 16) {
+            mEEPROMReadBits++;
+        }
+        mEEPROMControl = value;
+        retval = true;
+    } else if (port == 0x37) {
 		// CommandReg (no matter which window)
 		if (size != 1) {
 			IO_RTL8139_WARN("unaligned write to CommandReg\n");
@@ -516,29 +592,33 @@ bool writeDeviceIO(uint r, uint32 port, uint32 data, uint size)
 			IO_RTL8139_TRACE("write to TS0, got data to send %08x\n", data);
 			TxPacket(mRegisters.TxStartAddrD0, data & 0x0fff);
 			mRegisters.TxStatusD0 |= ((1 << 13)|(1<<15)); //	set ownership
-			mIntStatus |= 4; // Tx Ok
-			break;
+            mIntStatus |= 4; // Tx Ok
+            maybeRaiseIntr();
+            break;
 		}
 		case 0x14: {
 			IO_RTL8139_TRACE("write to TS1, got data to send %08x\n", data);
 			TxPacket(mRegisters.TxStartAddrD1, data & 0x0fff);
 			mRegisters.TxStatusD1 |= ((1 << 13)|(1<<15)); //	set ownership
-			mIntStatus |= 4; // Tx Ok
-			break;
+            mIntStatus |= 4; // Tx Ok
+            maybeRaiseIntr();
+            break;
 		}
 		case 0x18: {
 			IO_RTL8139_TRACE("write to TS2, got data to send %08x\n", data);
 			TxPacket(mRegisters.TxStartAddrD2, data & 0x0fff);
 			mRegisters.TxStatusD2 |= ((1 << 13)|(1<<15)); //	set ownership
-			mIntStatus |= 4; // Tx Ok
-			break;
+            mIntStatus |= 4; // Tx Ok
+            maybeRaiseIntr();
+            break;
 		}
 		case 0x1c: {
 			IO_RTL8139_TRACE("write to TS3, got data to send %08x\n", data);
 			TxPacket(mRegisters.TxStartAddrD3, data & 0x0fff);
 			mRegisters.TxStatusD3 |= ((1 << 13)|(1<<15)); //	set ownership
-			mIntStatus |= 4; // Tx Ok
-			break;
+            mIntStatus |= 4; // Tx Ok
+            maybeRaiseIntr();
+            break;
 		}
 		case 0x20: {
 			IO_RTL8139_TRACE("write to TxSA0, address %08x\n", data);
@@ -658,11 +738,20 @@ void handleRxQueue()
 			}
 			//header |= Rx_RUNT; // set runt status
 		}
-		/* pad to a 4 byte boundary */
-		for (int i = 4-(rxPacketSize % 4); i != 0; i--) {
-			rxPacket[rxPacketSize++] = 0;
-		}
-		if (memcmp(rxPacket, broadcast, 6) == 0) {
+        /* Pad the frame before appending the hardware-generated FCS. */
+        for (int i = 4-(rxPacketSize % 4); i != 0; i--) {
+            rxPacket[rxPacketSize++] = 0;
+        }
+        // RTL8139 RX headers report frame length including the four-byte FCS;
+        // 8139too subtracts it before passing the packet to the network stack.
+        // libslirp supplies an Ethernet frame without FCS, so generate it here.
+        uint32 crc = ether_crc(rxPacketSize, rxPacket);
+        rxPacket[rxPacketSize + 0] = crc;
+        rxPacket[rxPacketSize + 1] = crc >> 8;
+        rxPacket[rxPacketSize + 2] = crc >> 16;
+        rxPacket[rxPacketSize + 3] = crc >> 24;
+        rxPacketSize += 4;
+        if (memcmp(rxPacket, broadcast, 6) == 0) {
 			header |= Rx_BAR;
 		}
 //		IO_RTL8139_TRACE("handleRxQueue waiting for mLock\n");

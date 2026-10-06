@@ -902,18 +902,26 @@ static bool doProcessCudaEvent(const SystemEvent &ev)
 	case sysevMouse: {
 		int dx = ev.mouse.relx; //* 256 / gDisplay->mClientChar.width;
 		int dy = ev.mouse.rely; //* 256 / gDisplay->mClientChar.height;
-		// ADB mouse uses 7-bit signed deltas (-63..63),
-		// encoded as two's complement in bits 0-6 (bit 7 = button state)
-		if (dx < -63) dx = -63;
-		if (dx > 63) dx = 63;
-		if (dy < -63) dy = -63;
-		if (dy > 63) dy = 63;
-		dx &= 0x7f;
-		dy &= 0x7f;
-		if (!ev.mouse.button2) dx |= 0x80;
-		if (!ev.mouse.button1) dy |= 0x80;
-//		ht_printf("adb mouse: cur: %d, %d d: %d, %d\n", ev.mouseEvent.x, ev.mouseEvent.y, dx, dy);
-		cuda_send_packet(ADB_PACKET, 4, 0x40, 0x3c, dy, dx);
+        // ADB mouse uses 7-bit signed deltas (-63..63), with active-low
+        // button bits. Handler 4 extends register 0 with a third byte:
+        // byte 1 = left + Y, byte 2 = middle + X, byte 3 = right.
+        if (dx < -63) dx = -63;
+        if (dx > 63) dx = 63;
+        if (dy < -63) dy = -63;
+        if (dy > 63) dy = 63;
+        dx &= 0x7f;
+        dy &= 0x7f;
+        if (!ev.mouse.button3) dx |= 0x80; // middle is byte 2 for handler 4
+        if (!ev.mouse.button1) dy |= 0x80; // left
+        if (gCUDA.mousehandler == 4) {
+            uint8 right = ev.mouse.button2 ? 0x00 : 0x80;
+            cuda_send_packet(ADB_PACKET, 5, 0x40, 0x3c, dy, dx, right);
+        } else {
+            // Standard ADB handlers have only two button bits; retain the
+            // legacy second-button encoding for OS X and older guests.
+            if (!ev.mouse.button2) dx |= 0x80;
+            cuda_send_packet(ADB_PACKET, 4, 0x40, 0x3c, dy, dx);
+        }
 		return true;
 	}
 	default:

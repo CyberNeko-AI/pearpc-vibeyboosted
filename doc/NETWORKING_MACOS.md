@@ -65,3 +65,26 @@ macOS 上直接启用网卡（不写 `network` 键）即默认走 nat 后端，�
 - 运行 `SLIRPETH_DEBUG=1` 可开启后端帧收发日志；
   `G_MESSAGES_DEBUG=all` 可开启 libslirp 内部调试输出。
 
+
+
+## RTL8139 Linux driver compatibility
+
+The RTL8139 PCI function exposes both the legacy I/O BAR at `0x1800` and a
+256-byte MMIO BAR at `0x80890000`. Mandrake Linux 9.1's `8139too` module is
+built without `CONFIG_8139TOO_PIO`, so it requires the MMIO resource (BAR1).
+The two BARs address the same emulated register bank.
+
+
+## DHCP bring-up diagnostics
+
+The RTL8139 model reports PCI/register revision `0x10`, exposes I/O BAR0 and
+MMIO BAR1, and raises the TX-complete interrupt after queuing a frame. If
+`8139too` loads but DHCP falls back to `169.254.*`, collect `dmesg`,
+`/proc/interrupts`, `ifconfig -a`, and `route -n` before changing the network
+configuration.
+
+The RTL8139 receive path appends the four-byte Ethernet FCS before placing a
+frame in the guest RX ring. The Linux 2.4 `8139too` driver reports the RX
+length including FCS and subtracts four before delivering DHCP/IP payloads;
+without this step DHCP replies were truncated and the guest fell back to
+`169.254.*` even though libslirp had generated replies.

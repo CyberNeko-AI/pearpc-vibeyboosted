@@ -75,11 +75,11 @@ extern "C" void FASTCALL io_mem_write_glue(uint32 addr, uint32 data, int size)
 		nvram_write(addr, data, size);
 		return;		
 	}
-	// PCI and ISA must be checked at last
-	if (addr >= IO_PCI_DEVICE_PA_START && addr < IO_PCI_DEVICE_PA_END) {
-		pci_write_device(addr, data, size);
-		return;
-	}
+    // The guest can relocate PCI BARs above the firmware's legacy window.
+    if (addr >= IO_PCI_DEVICE_PA_START && addr < IO_PCI_PA_START &&
+        pci_write_device(addr, data, size)) {
+        return;
+    }
 	if (addr >= IO_ISA_PA_START && addr < IO_ISA_PA_END) {
 		/*
 		 * should raise exception here...

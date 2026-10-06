@@ -69,11 +69,14 @@ static inline int io_mem_write(uint32 addr, uint32 data, int size)
 		nvram_write(addr, data, size);
 		return IO_MEM_ACCESS_OK;		
 	}
-	// PCI and ISA must be checked at last
-	if (addr >= IO_PCI_DEVICE_PA_START && addr < IO_PCI_DEVICE_PA_END) {
-		pci_write_device(addr, data, size);
-		return IO_MEM_ACCESS_OK;
-	}
+    // PCI BARs may be relocated by the guest PCI allocator outside the
+    // legacy 0x80000000 window (for example, RTL8139 MMIO at e120a000).
+    // RAM ends below this range on supported PearPC configurations, so probe
+    // all high physical addresses before treating them as ISA/unmapped I/O.
+    if (addr >= IO_PCI_DEVICE_PA_START && addr < IO_PCI_PA_START &&
+        pci_write_device(addr, data, size)) {
+        return IO_MEM_ACCESS_OK;
+    }
 	if (addr >= IO_ISA_PA_START && addr < IO_ISA_PA_END) {
 		/*
 		 * should raise exception here...
@@ -146,11 +149,12 @@ static inline int io_mem_read_impl(uint32 addr, uint32 &data, int size)
 		data = 1;
 		return IO_MEM_ACCESS_OK;
 	}
-	// PCI and ISA must be checked at last
-	if (addr >= IO_PCI_DEVICE_PA_START && addr < IO_PCI_DEVICE_PA_END) {
-		pci_read_device(addr, data, size);
-		return IO_MEM_ACCESS_OK;
-	}
+    // See the write path above: use the live PCI BAR addresses, not only
+    // the firmware's legacy 0x80000000 device window.
+    if (addr >= IO_PCI_DEVICE_PA_START && addr < IO_PCI_PA_START &&
+        pci_read_device(addr, data, size)) {
+        return IO_MEM_ACCESS_OK;
+    }
 	if (addr >= IO_ISA_PA_START && addr < IO_ISA_PA_END) {		
 		/*
 		 * should raise exception here...

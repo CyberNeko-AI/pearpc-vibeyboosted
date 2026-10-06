@@ -205,8 +205,8 @@ static bool handleSDLEvent(const SDL_Event &event)
 		{
 			SDL_MouseButtonFlags buttons = SDL_GetMouseState(NULL, NULL);
 			mouseButton[0] = (buttons & SDL_BUTTON_LMASK) != 0;
-			mouseButton[1] = (buttons & SDL_BUTTON_MMASK) != 0;
-			mouseButton[2] = (buttons & SDL_BUTTON_RMASK) != 0;
+			mouseButton[1] = (buttons & SDL_BUTTON_RMASK) != 0;
+			mouseButton[2] = (buttons & SDL_BUTTON_MMASK) != 0;
 		}
 		ev.mouse.button1 = mouseButton[0];
 		ev.mouse.button2 = mouseButton[1];

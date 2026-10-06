@@ -191,6 +191,13 @@ If the keyboard behaves strangely after Alt-Tab, press **Alt+Ctrl+Shift** to res
 
 The client mouse is independent of the host mouse. Press **F12** to toggle mouse grab (switch between host and client mouse). The window title indicates the current mode.
 
+The SDL backend sends left, right and middle buttons. For guests that select the
+ADB extended mouse handler (Linux `adbhid` handler 4), PearPC sends the extended
+three-button packet: Linux sees left, middle and right as separate buttons.
+Older ADB handlers retain the two-button packet for compatibility. Mouse-wheel
+scrolling is not exposed yet because the ADB packets used by the supported guest
+kernels have no portable wheel field.
+
 ### Key Bindings
 
 | Key | Action |

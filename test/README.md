@@ -217,7 +217,7 @@ sh test/run_cuda_keyboard_tests.sh build/a64
 ```
 
 The test includes the actual CUDA implementation and drives its registers in the
-order used by Linux 2.4 `via-cuda.c`, including the final `read_done` interrupt.
+order used by Linux 2.4 `via-cuda.c`, including the final `read_done` interrupt and handler-4 mouse button bytes.
 PIC delivery is replaced with a pending-IRQ flag; the test does not model the
 CPU interrupt mask or run a guest kernel. It checks every press/release in
 `dmesg`, both initial TACK levels, command/reply turnaround, packet lengths and

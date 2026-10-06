@@ -140,6 +140,20 @@ int main()
         mouse.mouse.rely = -1;
         CHECK(doProcessCudaEvent(mouse));
         CHECK(receivePacket() == std::vector<byte>({ADB_PACKET, 0x40, 0x3c, 0xff, 0x81}));
+
+        // Handler 4 is Linux's Apple extended mouse protocol: left/Y,
+        // middle/X, right. Verify all three active-low button bits.
+        gCUDA.mousehandler = 4;
+        mouse.mouse.button1 = true;
+        mouse.mouse.button2 = true;
+        mouse.mouse.button3 = false;
+        CHECK(doProcessCudaEvent(mouse));
+        CHECK(receivePacket() == std::vector<byte>({ADB_PACKET, 0x40, 0x3c, 0x7f, 0x81, 0x00}));
+        mouse.mouse.button1 = false;
+        mouse.mouse.button2 = false;
+        mouse.mouse.button3 = true;
+        CHECK(doProcessCudaEvent(mouse));
+        CHECK(receivePacket() == std::vector<byte>({ADB_PACKET, 0x40, 0x3c, 0xff, 0x01, 0x80}));
     }
     sys_destroy_semaphore(idle);
     sys_destroy_mutex(gCUDAMutex);
